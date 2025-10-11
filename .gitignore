@@ -12,3 +12,6 @@ obj/
 *.sln.DotSettings.user
 *.vs/
 /.idea/
+/publish/
+/publish_win64.bat
+/tools/YLsLNTransformer/
