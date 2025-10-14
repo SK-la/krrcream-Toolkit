@@ -1,5 +1,5 @@
-﻿using krrTools.Configuration;
-using krrTools.Bindable;
+﻿using krrTools.Bindable;
+using krrTools.Core;
 using static krrTools.Localization.Strings;
 
 namespace krrTools.Tools.DPtool
@@ -9,65 +9,54 @@ namespace krrTools.Tools.DPtool
     /// </summary>
     public class DPToolOptions : ToolOptionsBase
     {
-        [Option(LabelKey = nameof(DPModifyKeysCheckbox), TooltipKey = nameof(DPModifyKeysTooltip), UIType = UIType.Toggle)]
-        public Bindable<bool> ModifySingleSideKeyCount { get; } = new Bindable<bool>();
-
-        [Option(LabelKey = nameof(KeysSliderLabel), Min = 1, Max = 12, UIType = UIType.Slider, DataType = typeof(double))]
-        public Bindable<double> SingleSideKeyCount { get; } = new Bindable<double>();
+        [Option(LabelKey = nameof(KeysSliderLabel), Min = 1, Max = 12, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double?> SingleSideKeyCount { get; } = new Bindable<double?>(5);
 
         #region 左手区
 
-        [Option(LabelKey = nameof(DPMirrorLabel), TooltipKey = nameof(DPMirrorTooltipLeft), UIType = UIType.Toggle)]
+        [Option(LabelKey = nameof(DPMirrorLabel), TooltipKey = nameof(DPMirrorTooltipLeft), UIType = UIType.Toggle, IsRefresher = true)]
         public Bindable<bool> LMirror { get; } = new Bindable<bool>();
 
-        [Option(LabelKey = nameof(DPDensityLabel), TooltipKey = nameof(DPDensityTooltipLeft), UIType = UIType.Toggle)]
+        [Option(LabelKey = nameof(DPDensityLabel), TooltipKey = nameof(DPDensityTooltipLeft), UIType = UIType.Toggle, IsRefresher = true)]
         public Bindable<bool> LDensity { get; } = new Bindable<bool>();
 
-        [Option(LabelKey = nameof(RemoveLabel), TooltipKey = nameof(RemoveTooltip), UIType = UIType.Toggle)]
+        [Option(LabelKey = nameof(RemoveLabel), TooltipKey = nameof(RemoveTooltip), UIType = UIType.Toggle, IsRefresher = true)]
         public Bindable<bool> LRemove { get; } = new Bindable<bool>();
 
         [Option(LabelKey = nameof(DPLeftMaxKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double))]
-        public Bindable<double> LMaxKeys { get; } = new Bindable<double>();
+            DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> LMaxKeys { get; } = new Bindable<double>(5);
 
         [Option(LabelKey = nameof(DPLeftMinKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double))]
-        public Bindable<double> LMinKeys { get; } = new Bindable<double>();
+            DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> LMinKeys { get; } = new Bindable<double>(1);
 
         #endregion
 
         #region 右手区
 
-        [Option(LabelKey = nameof(DPMirrorLabel), TooltipKey = nameof(DPMirrorTooltipRight), UIType = UIType.Toggle)]
+        [Option(LabelKey = nameof(DPMirrorLabel), TooltipKey = nameof(DPMirrorTooltipRight), UIType = UIType.Toggle, IsRefresher = true)]
         public Bindable<bool> RMirror { get; } = new Bindable<bool>();
 
-        [Option(LabelKey = nameof(DPDensityLabel), TooltipKey = nameof(DPDensityTooltipRight), UIType = UIType.Toggle)]
+        [Option(LabelKey = nameof(DPDensityLabel), TooltipKey = nameof(DPDensityTooltipRight), UIType = UIType.Toggle, IsRefresher = true)]
         public Bindable<bool> RDensity { get; } = new Bindable<bool>();
 
-        [Option(LabelKey = nameof(RemoveLabel), TooltipKey = nameof(RemoveTooltip), UIType = UIType.Toggle)]
+        [Option(LabelKey = nameof(RemoveLabel), TooltipKey = nameof(RemoveTooltip), UIType = UIType.Toggle, IsRefresher = true)]
         public Bindable<bool> RRemove { get; } = new Bindable<bool>();
 
         [Option(LabelKey = nameof(DPRightMaxKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double))]
-        public Bindable<double> RMaxKeys { get; } = new Bindable<double>();
+            DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> RMaxKeys { get; } = new Bindable<double>(5);
 
         [Option(LabelKey = nameof(DPRightMinKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double))]
-        public Bindable<double> RMinKeys { get; } = new Bindable<double>();
+            DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> RMinKeys { get; } = new Bindable<double>(1);
 
         #endregion
 
         public DPToolOptions()
         {
-            // Set default values
-            SingleSideKeyCount.Value = 10;
-            LMaxKeys.Value = 5;
-            LMinKeys.Value = 1;
-            RMaxKeys.Value = 5;
-            RMinKeys.Value = 1;
-
             // Wire up property changed events for Bindable<T> properties
-            ModifySingleSideKeyCount.PropertyChanged += (_, _) => OnPropertyChanged(nameof(ModifySingleSideKeyCount));
             SingleSideKeyCount.PropertyChanged += (_, _) => OnPropertyChanged(nameof(SingleSideKeyCount));
             LMirror.PropertyChanged += (_, _) => OnPropertyChanged(nameof(LMirror));
             LDensity.PropertyChanged += (_, _) => OnPropertyChanged(nameof(LDensity));
@@ -86,6 +75,13 @@ namespace krrTools.Tools.DPtool
         {
             base.Validate(); // First clamp to Min/Max
             IsValidating = true;
+
+            // SingleSideKeyCount 约束
+            if (SingleSideKeyCount.Value.HasValue)
+            {
+                if (SingleSideKeyCount.Value < 1) SingleSideKeyCount.Value = 1;
+                if (SingleSideKeyCount.Value > 12) SingleSideKeyCount.Value = 12;
+            }
 
             // 左手键数约束
             if (LMinKeys.Value < 1) LMinKeys.Value = 1;

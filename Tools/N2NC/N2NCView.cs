@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using krrTools.Configuration;
+using krrTools.Core;
 using krrTools.Localization;
 using krrTools.UI;
 
@@ -184,6 +185,25 @@ namespace krrTools.Tools.N2NC
                 }
             );
 
+            // Add built-in presets to the presets panel
+            if (presetsBorder is StackPanel outerPanel)
+            {
+                var builtinPresetsPanel = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+                foreach (var (kind, _, options) in PresetBottom.GetPresetTemplates())
+                {
+                    var btn = SharedUIComponents.CreateStandardButton(PresetBottom.GetEnumDescription(kind));
+                    btn.Width = 100;
+                    btn.Click += (_, _) =>
+                    {
+                        _viewModel.TargetKeys = (int)options.TargetKeys.Value;
+                        _viewModel.TransformSpeed = options.TransformSpeed.Value;
+                        _viewModel.Seed = options.Seed;
+                    };
+                    builtinPresetsPanel.Children.Add(btn);
+                }
+                outerPanel.Children.Insert(0, builtinPresetsPanel);
+            }
+
             var presetsPanel = SharedUIComponents.CreateLabeledRow(Strings.PresetsLabel, presetsBorder, rowMargin);
             grid.Children.Add(presetsPanel);
 
@@ -217,16 +237,5 @@ namespace krrTools.Tools.N2NC
             var currentSelection = _viewModel.KeySelection;
             _viewModel.KeySelection = currentSelection;
         }
-
-
-
-        // private void GenerateSeedButton_Click(object sender, RoutedEventArgs e)
-        // {
-        //     Random random = new Random();
-        //     int newSeed = random.Next();
-        //     // 更新ViewModel和绑定的TextBox（双向绑定将保持它们同步）
-        //     _viewModel.Seed = newSeed;
-        //     if (SeedTextBox != null) SeedTextBox.Text = newSeed.ToString();
-        // }
     }
 }

@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,7 +20,7 @@ using krrTools.Tools.N2NC;
 using krrTools.Tools.Preview;
 using krrTools.UI;
 using krrTools.Utilities;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Grid = Wpf.Ui.Controls.Grid;
 using Point = System.Windows.Point;
 using Size = System.Windows.Size;
@@ -32,60 +30,33 @@ namespace krrTools
 {
     public class MainWindow : FluentWindow
     {
-        private readonly IEventBus _eventBus;
         private readonly Dictionary<object, ContentControl> _settingsHosts = new();
         private readonly Grid root;
         private readonly TabView MainTabControl;
         private readonly Grid _mainGrid;
 
-        private PreviewViewDual? _previewDual;
-        private ContentControl? _currentSettingsContainer;
-        private ListenerViewModel? _listenerVM;
+        private PreviewViewDual _previewDual = null!;
+        private ContentControl _currentSettingsContainer = null!;
+        private readonly StateBarManager _StateBarManager;
+
+        // Snackbar服务
+        private SnackbarPresenter _snackbarPresenter = null!;
 
         // 跟踪选项卡拖动/分离
         private Point _dragStartPoint;
         private DateTime _dragStartTime;
         private TabViewItem? _draggedTab;
-        public TabView TabControl => MainTabControl;
-
-        public PreviewViewDual? PreviewDualControl => _previewDual;
-
-        public FileDropZone? FileDropZone => _fileDropZone;
-
-        private FileDropZone? _fileDropZone;
 
         // 工具调度器
         private IModuleManager ModuleManager { get; }
-
-        // private object? _currentTool;
-        // private string? _internalOsuPath;
-        // private string? _lastProcessedBackgroundPath;
-        private bool _realTimePreview;
-        public bool RealTimePreviewEnabled => _realTimePreview;
-
-        private bool RealTimePreview
-        {
-            get => _realTimePreview;
-            set
-            {
-                if (_realTimePreview != value)
-                {
-                    _realTimePreview = value;
-                    BaseOptionsManager.SetRealTimePreview(_realTimePreview);
-                    OnRealTimePreviewChanged();
-                }
-            }
-        }
-
-        private void LoadRealTimePreview()
-        {
-            _realTimePreview = BaseOptionsManager.GetRealTimePreview();
-        }
 
         private N2NCView _convWindowInstance = null!;
         private DPToolView _dpToolWindowInstance = null!;
         private KRRLNTransformerView _krrLnTransformerInstance = null!;
         private ListenerControl _listenerControlInstance = null!;
+
+        private readonly Dictionary<ConverterEnum, Func<IToolOptions>> _optionsProviders = new();
+        private readonly Dictionary<ConverterEnum, Func<object?>> _viewModelGetters = new();
 
         private ContentControl? N2NCSettingsHost => _settingsHosts.GetValueOrDefault(ConverterEnum.N2NC);
         private ContentControl? DPSettingsHost => _settingsHosts.GetValueOrDefault(ConverterEnum.DP);
@@ -94,12 +65,15 @@ namespace krrTools
         private ContentControl? FilesManagerHost => _settingsHosts.GetValueOrDefault(ModuleEnum.FilesManager);
         private ContentControl? ListenerSettingsHost => _settingsHosts.GetValueOrDefault(ModuleEnum.Listener);
 
-        public FileDropZoneViewModel? FileDropZoneViewModel => null;
-
-        public MainWindow(IModuleManager moduleManager, IEventBus eventBus)
+        public MainWindow(IModuleManager moduleManager)
         {
-            _eventBus = eventBus;
             ModuleManager = moduleManager;
+
+            // 自动注入标记了 [Inject] 的属性
+            this.InjectServices();
+
+            // 从服务容器获取状态管理器
+            _StateBarManager = App.Services.GetRequiredService<StateBarManager>();
 
             Title = Strings.WindowTitle; // 初始化
             Width = 1000;
@@ -133,11 +107,9 @@ namespace krrTools
                 }
             };
 
-            LoadRealTimePreview();
             BuildUI();
-            OnRealTimePreviewChanged();
-
             LoadToolSettingsHosts();
+            InitializeProviders();
 
             Loaded += ApplyToThemeLoaded;
             MainTabControl.PreviewMouseLeftButtonDown += TabControl_PreviewMouseLeftButtonDown;
@@ -149,31 +121,136 @@ namespace krrTools
             Closed += MainWindow_Closed;
         }
 
+        private void InitializeProviders()
+        {
+            _optionsProviders[ConverterEnum.N2NC] = () => (_convWindowInstance.DataContext as N2NCViewModel)?.Options ?? new N2NCOptions();
+            _optionsProviders[ConverterEnum.DP] = () => (_dpToolWindowInstance.DataContext as DPToolViewModel)?.Options ?? new DPToolOptions();
+            _optionsProviders[ConverterEnum.KRRLN] = () => (_krrLnTransformerInstance.DataContext as KRRLNTransformerViewModel)?.Options ?? new KRRLNTransformerOptions();
+
+            _viewModelGetters[ConverterEnum.N2NC] = () => _convWindowInstance.DataContext;
+            _viewModelGetters[ConverterEnum.DP] = () => _dpToolWindowInstance.DataContext;
+            _viewModelGetters[ConverterEnum.KRRLN] = () => _krrLnTransformerInstance.DataContext;
+        }
+
         private void BuildUI()
         {
             // 设置内容容器
-            var settingsContainer = new ContentControl
+            _currentSettingsContainer = new ContentControl
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch
             };
-            _currentSettingsContainer = settingsContainer;
 
-            // 预览器
-            BuildPreviewTabs();
-            BuildNoPreViewTabs();
+            BuildTabs(Enum.GetValues<ConverterEnum>(), converter => converter switch
+            {
+                ConverterEnum.N2NC => Strings.TabN2NC,
+                ConverterEnum.KRRLN => Strings.TabKRRsLN,
+                ConverterEnum.DP => Strings.TabDPTool,
+                _ => converter.ToString()
+            }, true);
 
+            BuildTabs(Enum.GetValues<ModuleEnum>(), module => module switch
+            {
+                ModuleEnum.LVCalculator => Strings.TabKrrLV,
+                ModuleEnum.FilesManager => Strings.TabFilesManager,
+                ModuleEnum.Listener => Strings.OSUListener,
+                _ => module.ToString()
+            }, false);
+
+            var previewGrid = BuildPreview();
+            var footer = BuildFooter();
+
+            // 设置Grid行
+            System.Windows.Controls.Grid.SetRow(MainTabControl, 1);
+            System.Windows.Controls.Grid.SetColumnSpan(MainTabControl, 2); // 跨越两列
+            System.Windows.Controls.Grid.SetRow(_mainGrid, 2);
+            System.Windows.Controls.Grid.SetRow(footer, 3);
+
+            System.Windows.Controls.Grid.SetColumn(_currentSettingsContainer, 0);
+            System.Windows.Controls.Grid.SetRow(_previewDual, 0);
+            System.Windows.Controls.Grid.SetRow(previewGrid.Children[1], 1); // fileDropZone
+            System.Windows.Controls.Grid.SetColumn(previewGrid, 1);
+
+            _mainGrid.Children.Add(_currentSettingsContainer);
+            _mainGrid.Children.Add(previewGrid);
+            root.Children.Add(new TitleBar { Title = Strings.WindowTitle });
+            root.Children.Add(MainTabControl);
+            root.Children.Add(_mainGrid);
+            root.Children.Add(footer);
+
+            // 添加SnackbarPresenter
+            _snackbarPresenter = new SnackbarPresenter();
+            root.Children.Add(_snackbarPresenter);
+
+            AllowDrop = true;
+        }
+
+        private void BuildTabs<T>(IEnumerable<T> enums, Func<T, string> getHeader, bool hasPreview) where T : Enum
+        {
+            foreach (var cfg in enums)
+            {
+                var headerLabel = SharedUIComponents.CreateHeaderLabel(getHeader(cfg));
+                headerLabel.FontSize = 14;
+                var tab = new TabViewItem
+                {
+                    Header = headerLabel,
+                    Tag = cfg,
+                    Width = double.NaN,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                var settingsHost = new ContentControl();
+                _settingsHosts[cfg] = settingsHost;
+
+                if (hasPreview)
+                {
+                    var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+                    settingsHost.Content = null;
+                    scroll.Content = settingsHost;
+                    SharedUIComponents.CreateStandardPanel(scroll, new Thickness(8));
+                }
+                else
+                {
+                    settingsHost.AllowDrop = true;
+                }
+                MainTabControl.Items.Add(tab);
+            }
+        }
+
+        private Grid BuildPreview()
+        {
             // 全局预览器
             var previewViewModel = new PreviewViewModel();
             _previewDual = new PreviewViewDual(previewViewModel);
 
-            // 创建 FileDropZoneViewModel
-            var fileDispatcher = new FileDispatcher();
-            var fileDropZoneViewModel = new FileDropZoneViewModel(_previewDual, fileDispatcher, GetActiveTabTag);
-            var fileDropZone = new FileDropZone(fileDropZoneViewModel);
-            _fileDropZone = fileDropZone;
-            // fileDropZoneViewModel.FilesDropped += OnFilesDropped;
-            // fileDropZoneViewModel.StartConversionRequested += StartConversionRequested;
+            var fileDispatcher = new FileDispatcher
+            {
+                // 设置消息显示委托
+                ShowMessage = (title, message) =>
+                {
+                    var snackbar = new Snackbar(_snackbarPresenter)
+                    {
+                        Title = title,
+                        Content = message,
+                        Appearance = ControlAppearance.Success,
+                        Timeout = TimeSpan.FromSeconds(5)
+                    };
+                    snackbar.Show();
+                }
+            };
+            var unused = new FileDropZoneViewModel(fileDispatcher)
+            {
+                PreviewDual = _previewDual,
+                GetActiveTabTag = GetActiveTabTag
+            };
+            unused.InjectServices(); // 注入依赖项
+            var fileDropZone = new FileDropZone(fileDispatcher)
+            {
+                ViewModel =
+                {
+                    GetActiveTabTag = GetActiveTabTag,
+                    PreviewDual = _previewDual
+                }
+            };
 
             var previewGrid = new Grid();
             previewGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -183,17 +260,13 @@ namespace krrTools
             previewGrid.Children.Add(previewPanel);
             previewGrid.Children.Add(fileDropZone);
 
-            // Footer
-            var statusBarControl = new StatusBarControl
-            {
-                RealTimeToggle =
-                {
-                    IsChecked = RealTimePreview
-                }
-            };
+            return previewGrid;
+        }
 
-            statusBarControl.RealTimeToggle.Checked += (_, _) => RealTimePreview = true;
-            statusBarControl.RealTimeToggle.Unchecked += (_, _) => RealTimePreview = false;
+        private StatusBarControl BuildFooter()
+        {
+            // Footer
+            var statusBarControl = new StatusBarControl(_StateBarManager);
 
             var localizedRealTimeText = new DynamicLocalizedString(Strings.RealTimePreviewLabel);
             statusBarControl.RealTimeToggle.SetBinding(ContentProperty,
@@ -212,29 +285,10 @@ namespace krrTools
                 statusBarControl.TopmostToggle.ToolTip = "置顶窗口";
             };
 
-            var footer = statusBarControl;
+            // 添加SnackbarPresenter
+            _snackbarPresenter = new SnackbarPresenter();
 
-            // 设置Grid行
-            System.Windows.Controls.Grid.SetRow(MainTabControl, 1);
-            System.Windows.Controls.Grid.SetColumnSpan(MainTabControl, 2); // 跨越两列
-            System.Windows.Controls.Grid.SetRow(_mainGrid, 2);
-            System.Windows.Controls.Grid.SetRow(footer, 3);
-
-            System.Windows.Controls.Grid.SetColumn(settingsContainer, 0);
-            System.Windows.Controls.Grid.SetRow(previewPanel, 0);
-            System.Windows.Controls.Grid.SetRow(fileDropZone, 1);
-            System.Windows.Controls.Grid.SetColumn(previewGrid, 1);
-
-            _mainGrid.Children.Add(settingsContainer);
-            _mainGrid.Children.Add(previewGrid);
-            root.Children.Add(new TitleBar { Title = Strings.WindowTitle });
-            root.Children.Add(MainTabControl);
-            root.Children.Add(_mainGrid);
-            root.Children.Add(footer);
-
-            AllowDrop = true;
-            // 设置初始选项卡内容
-            MainTabControl_SelectionChanged(null, null);
+            return statusBarControl;
         }
 
         private void ApplyToThemeLoaded(object sender, RoutedEventArgs e)
@@ -247,74 +301,7 @@ namespace krrTools
             }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         }
 
-        #region 创建带预览器选项卡
 
-        private void BuildPreviewTabs()
-        {
-            foreach (var cfg in Enum.GetValuesAsUnderlyingType(
-                         typeof(ConverterEnum)).Cast<ConverterEnum>())
-            {
-                var headerText = cfg switch
-                {
-                    ConverterEnum.N2NC => Strings.TabN2NC,
-                    ConverterEnum.KRRLN => Strings.TabKRRsLN,
-                    ConverterEnum.DP => Strings.TabDPTool,
-                    _ => cfg.ToString()
-                };
-                var headerLabel = SharedUIComponents.CreateHeaderLabel(headerText);
-                headerLabel.FontSize = 14;
-                var tab = new TabViewItem
-                {
-                    Header = headerLabel,
-                    Tag = cfg,
-                    Width = double.NaN,
-                    HorizontalAlignment = HorizontalAlignment.Left
-                };
-                var settingsHost = new ContentControl();
-                _settingsHosts[cfg] = settingsHost;
-
-                var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-                settingsHost.Content = null;
-                scroll.Content = settingsHost;
-                SharedUIComponents.CreateStandardPanel(scroll, new Thickness(8));
-                MainTabControl.Items.Add(tab);
-            }
-        }
-
-        #endregion
-
-        #region 创建简单选项卡（无预览器）
-
-        private void BuildNoPreViewTabs()
-        {
-            foreach (var cfg in Enum.GetValuesAsUnderlyingType(
-                         typeof(ModuleEnum)).Cast<ModuleEnum>())
-            {
-                var headerText = cfg switch
-                {
-                    ModuleEnum.LVCalculator => Strings.TabKrrLV,
-                    ModuleEnum.FilesManager => Strings.TabFilesManager,
-                    ModuleEnum.Listener => Strings.OSUListener,
-                    _ => cfg.ToString()
-                };
-                var headerLabel = SharedUIComponents.CreateHeaderLabel(headerText);
-                headerLabel.FontSize = 14;
-                var tab = new TabViewItem
-                {
-                    Header = headerLabel,
-                    Tag = cfg,
-                    Width = double.NaN,
-                    HorizontalAlignment = HorizontalAlignment.Left
-                };
-                var settingsHost = new ContentControl();
-                _settingsHosts[cfg] = settingsHost;
-
-                settingsHost.AllowDrop = true;
-                MainTabControl.Items.Add(tab);
-            }
-        }
-
-        #endregion
 
         // 清除固定尺寸属性，以便嵌入时自适应布局
         private void ClearFixedSizes(DependencyObject? element)
@@ -427,12 +414,11 @@ namespace krrTools
                 },
                 new ToolEmbeddingConfig
                 {
-                    ControlFactory = () => new ListenerControl(_eventBus),
+                    ControlFactory = () => new ListenerControl(),
                     HostGetter = () => ListenerSettingsHost,
                     InstanceSetter = control =>
                     {
                         _listenerControlInstance = (ListenerControl)control;
-                        _listenerControlInstance.ViewModel.PropertyChanged += ListenerViewModel_PropertyChanged;
                     }
                 }
             };
@@ -534,7 +520,7 @@ namespace krrTools
             var insertIndex = MainTabControl.Items.IndexOf(tab);
             MainTabControl.Items.Remove(tab);
 
-            var followTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            var followTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
             followTimer.Tick += (_, _) =>
             {
                 var p = System.Windows.Forms.Cursor.Position;
@@ -616,60 +602,12 @@ namespace krrTools
             }
         }
 
-        private void OnRealTimePreviewChanged()
-        {
-            if (_realTimePreview)
-            {
-                if (_listenerVM == null)
-                {
-                    _listenerVM = new ListenerViewModel();
-                    _listenerVM.BeatmapSelected += OnBeatmapSelected;
-                }
-
-                // 立即触发一次检查，以加载当前选中的谱面
-                _ = _listenerVM.TriggerImmediateCheck();
-                // 移除直接调用SetSongsPath的逻辑，让ListenerViewModel自动检测osu!进程并获取Songs路径
-                // if (string.IsNullOrEmpty(_listenerVM.Config.SongsPath))
-                // {
-                //     _listenerVM.SetSongsPath();
-                // }
-            }
-            else
-            {
-                if (_listenerVM != null)
-                {
-                    _listenerVM.Cleanup();
-                    _listenerVM = null;
-                }
-
-                // 当关闭实时预览时，重置预览到默认内置样本
-                _previewDual?.ResetPreview();
-                // 清除拖入区的监听文件
-                _fileDropZone?.SetManualMode(null);
-            }
-        }
-
-        private void OnBeatmapSelected(object? sender, ListenerViewModel.BeatmapInfo e)
-        {
-            if (string.IsNullOrEmpty(e.FilePath) || !File.Exists(e.FilePath)) return;
-
-            try
-            {
-                _fileDropZone?.SetManualMode([e.FilePath], FileDropZoneViewModel.FileSource.Listened);
-            }
-            catch (Exception ex)
-            {
-            LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger("MainWindow")
-                .LogError($"Error loading beatmap in real-time preview: {ex.Source}{ex.Message}{ex.StackTrace}");
-            }
-        }
-
         private void MainTabControl_SelectionChanged(object? sender, SelectionChangedEventArgs? e)
         {
             var selectedTag = (MainTabControl.SelectedItem as TabViewItem)?.Tag;
             var isConverter = selectedTag is ConverterEnum;
 
-            if (_previewDual != null && selectedTag != null)
+            if (selectedTag != null)
             {
                 _previewDual.Visibility = isConverter ? Visibility.Visible : Visibility.Collapsed;
                 if (isConverter)
@@ -693,7 +631,9 @@ namespace krrTools
                         // 通过ViewModel设置处理器，它会处理刷新
                         _previewDual.ViewModel!.SetProcessor(processor);
                         _previewDual.SetCurrentTool(converterEnum);
-                        _previewDual.SetCurrentViewModel(viewModel);
+
+                        // 选项卡切换时立即刷新预览
+                        _previewDual.ViewModel!.TriggerRefresh();
                     }
                 }
                 else
@@ -720,8 +660,6 @@ namespace krrTools
 
         private void UpdateSettingsContainer(object? selectedTag, bool isConverter)
         {
-            if (_currentSettingsContainer == null) return;
-
             _currentSettingsContainer.Content = null;
 
             if (selectedTag != null && _settingsHosts.TryGetValue(selectedTag, out var settingsHost))
@@ -739,43 +677,16 @@ namespace krrTools
             }
         }
 
-        private void ListenerViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == "CurrentOsuFilePath")
-            {
-                if (sender is ListenerViewModel listenerVM && !string.IsNullOrEmpty(listenerVM.CurrentOsuFilePath))
-                    _fileDropZone?.SetManualMode([listenerVM.CurrentOsuFilePath]);
-                else
-                    _fileDropZone?.SetManualMode(null);
-            }
-        }
-
         #region 辅助方法
 
         private Func<IToolOptions> GetOptionsProviderForConverter(ConverterEnum converter)
         {
-            return converter switch
-            {
-                ConverterEnum.N2NC => () =>
-                    (_convWindowInstance.DataContext as N2NCViewModel)?.Options ?? new N2NCOptions(),
-                ConverterEnum.DP => () =>
-                    (_dpToolWindowInstance.DataContext as DPToolViewModel)?.Options ?? new DPToolOptions(),
-                ConverterEnum.KRRLN => () =>
-                    (_krrLnTransformerInstance.DataContext as KRRLNTransformerViewModel)?.Options ??
-                    new KRRLNTransformerOptions(),
-                _ => () => new N2NCOptions() // 默认返回N2NC选项，避免null
-            };
+            return _optionsProviders.TryGetValue(converter, out var provider) ? provider : () => new N2NCOptions();
         }
 
         private object? GetViewModelForConverter(ConverterEnum converter)
         {
-            return converter switch
-            {
-                ConverterEnum.N2NC => _convWindowInstance.DataContext,
-                ConverterEnum.DP => _dpToolWindowInstance.DataContext,
-                ConverterEnum.KRRLN => _krrLnTransformerInstance.DataContext,
-                _ => null
-            };
+            return _viewModelGetters.TryGetValue(converter, out var getter) ? getter() : null;
         }
 
         /// <summary>
@@ -784,10 +695,10 @@ namespace krrTools
         private void MainWindow_Closed(object? sender, EventArgs e)
         {
             // 清理预览ViewModel的资源
-            if (_previewDual?.ViewModel is IDisposable disposableViewModel) disposableViewModel.Dispose();
+            if (_previewDual.ViewModel is IDisposable disposableViewModel) disposableViewModel.Dispose();
 
             // 清理ListenerViewModel的资源
-            if (_listenerVM is IDisposable listenerDisposable) listenerDisposable.Dispose();
+            if (_listenerControlInstance.ViewModel is IDisposable listenerDisposable) listenerDisposable.Dispose();
 
             // 清理工具ViewModel的资源
             if (_convWindowInstance.DataContext is IDisposable n2ncDisposable)

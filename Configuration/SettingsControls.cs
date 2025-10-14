@@ -27,14 +27,19 @@ namespace krrTools.Configuration
         public string? DynamicMinPath { get; init; }
         private CheckBox? CheckBox { get; set; }
 
-        private readonly string _labelText = string.Empty;
+        private DynamicLocalizedString? _labelTemplate;
+        private double? _rememberedValue; // 记忆上一个有效值
 
-        public string LabelText
+        public Bindable<string> LabelText { get; set; } = new(string.Empty);
+
+        public string LabelKey
         {
-            get => _labelText;
+            get => _labelTemplate?.Key ?? "";
             init
             {
-                _labelText = value;
+                _labelTemplate = new DynamicLocalizedString(value);
+                _labelTemplate.PropertyChanged += (_, _) => UpdateLabelWithValue(InnerSlider.Value);
+                UpdateLabelWithValue(InnerSlider.Value);
                 if (_isInitialized) UpdateLabelWithValue(InnerSlider.Value);
             }
         }
@@ -107,9 +112,6 @@ namespace krrTools.Configuration
         {
             if (CheckEnabled)
             {
-                CheckBox = new CheckBox { Margin = new Thickness(0, 0, 5, 0), IsChecked = false };
-                InnerSlider.IsEnabled = false;
-
                 // 检查属性是否是可空类型
                 bool isNullableType = false;
                 if (PropertySelector != null)
@@ -120,6 +122,26 @@ namespace krrTools.Configuration
                         propInfo.PropertyType.GetGenericTypeDefinition() == typeof(Bindable<>) &&
                         Nullable.GetUnderlyingType(propInfo.PropertyType.GetGenericArguments()[0]) != null;
                 }
+
+                bool initialChecked = false;
+                if (isNullableType && Source != null && PropertySelector != null)
+                {
+                    // 对于可空类型，根据当前值设置初始勾选状态
+                    var propInfo = GetPropertyInfoFromExpression(PropertySelector);
+                    if (propInfo != null)
+                    {
+                        var bindableValue = propInfo.GetValue(Source);
+                        if (bindableValue != null)
+                        {
+                            var valueProperty = bindableValue.GetType().GetProperty("Value");
+                            var currentValue = valueProperty?.GetValue(bindableValue);
+                            initialChecked = currentValue != null;
+                        }
+                    }
+                }
+
+                CheckBox = new CheckBox { Margin = new Thickness(0, 0, 5, 0), IsChecked = initialChecked };
+                InnerSlider.IsEnabled = initialChecked;
 
                 CheckBox.Checked += (_, _) =>
                 {
@@ -161,13 +183,19 @@ namespace krrTools.Configuration
 
                 if (isChecked)
                 {
-                    // 勾选时设置为滑条的当前值或默认值
-                    var defaultValue = InnerSlider.Value;
-                    valueProperty.SetValue(bindableProperty, defaultValue);
+                    // 勾选时恢复记忆的值或设置为默认值
+                    double valueToSet = _rememberedValue ?? InnerSlider.Value;
+                    valueProperty.SetValue(bindableProperty, valueToSet);
+                    InnerSlider.Value = valueToSet; // 同步滑条
                 }
                 else
                 {
-                    // 未勾选时设置为null
+                    // 未勾选时记住当前值，然后设置为null
+                    var currentValue = valueProperty.GetValue(bindableProperty);
+                    if (currentValue is double currentDouble)
+                    {
+                        _rememberedValue = currentDouble;
+                    }
                     valueProperty.SetValue(bindableProperty, null);
                 }
             }
@@ -179,9 +207,12 @@ namespace krrTools.Configuration
 
         private void InitializeLabel()
         {
-            if (!string.IsNullOrEmpty(LabelText))
+            if (_labelTemplate != null && !string.IsNullOrEmpty(_labelTemplate.Value))
             {
                 Label = new TextBlock { FontSize = SharedUIComponents.HeaderFontSize, FontWeight = FontWeights.Bold };
+                // 直接绑定到LabelText而不是设置绑定
+                Label.DataContext = LabelText;
+                Label.SetBinding(TextBlock.TextProperty, new Binding("Value"));
                 SetRow(Label, 0);
                 SetColumn(Label, 0);
                 Children.Add(Label);
@@ -215,8 +246,6 @@ namespace krrTools.Configuration
             // 设置动态最大值绑定
             if (DynamicMaxSource != null && !string.IsNullOrEmpty(DynamicMaxPath))
             {
-                Console.WriteLine(
-                    $"[SettingsControls] Setting up dynamic max binding: {DynamicMaxPath}, Source: {DynamicMaxSource}");
                 var maxBinding = new Binding(DynamicMaxPath)
                 {
                     Source = DynamicMaxSource,
@@ -241,15 +270,15 @@ namespace krrTools.Configuration
             }
             else
             {
-                Console.WriteLine(
-                    $"[SettingsControls] No dynamic max binding - Source: {DynamicMaxSource}, Path: {DynamicMaxPath}");
+                // 仅在调试时输出日志，避免生产环境日志污染，检查是否正确设置了动态绑定，没有定义动态绑定时不输出
+                if (!string.IsNullOrEmpty(DynamicMaxPath))
+                    Console.WriteLine(
+                        $"[SettingsControls] No dynamic max binding - Source: {DynamicMaxSource}, Path: {DynamicMaxPath}");
             }
 
             // 设置动态最小值绑定
             if (DynamicMinSource != null && !string.IsNullOrEmpty(DynamicMinPath))
             {
-                Console.WriteLine(
-                    $"[SettingsControls] Setting up dynamic min binding: {DynamicMinPath}, Source: {DynamicMinSource}");
                 var minBinding = new Binding(DynamicMinPath)
                 {
                     Source = DynamicMinSource,
@@ -353,7 +382,7 @@ namespace krrTools.Configuration
 
         private void UpdateLabelWithValue(double value)
         {
-            if (!string.IsNullOrEmpty(_labelText))
+            if (_labelTemplate != null && !string.IsNullOrEmpty(_labelTemplate.Value))
             {
                 bool isEnabled = !CheckEnabled || (CheckBox?.IsChecked ?? false);
                 string displayValue;
@@ -370,14 +399,14 @@ namespace krrTools.Configuration
                     displayValue = ((int)value).ToString();
                 }
 
-                if (_labelText.Contains("{0}"))
+                if (_labelTemplate.Value.Contains("{0}"))
                 {
-                    Label.Text = Strings.FormatLocalized(_labelText, displayValue);
+                    LabelText.Value = Strings.FormatLocalized(_labelTemplate.Value, displayValue);
                 }
                 else
                 {
-                    var localizedLabel = Strings.Localize(_labelText);
-                    Label.Text = localizedLabel + ": " + displayValue;
+                    var localizedLabel = _labelTemplate.Value;
+                    LabelText.Value = localizedLabel + ": " + displayValue;
                 }
             }
         }
@@ -407,8 +436,28 @@ namespace krrTools.Configuration
                         var finalProperty = currentObject.GetType().GetProperty(propertyNames[^1]);
                         if (finalProperty != null)
                         {
+                            Type targetType;
+                            object? targetObject;
+                            
+                            // Check if the property is Bindable<T>
+                            if (finalProperty.PropertyType.IsGenericType && finalProperty.PropertyType.GetGenericTypeDefinition() == typeof(Bindable<>))
+                            {
+                                // For Bindable<T>, target is the Value property
+                                targetType = finalProperty.PropertyType.GetGenericArguments()[0];
+                                var bindableInstance = finalProperty.GetValue(currentObject);
+                                if (bindableInstance == null) return;
+                                targetObject = bindableInstance;
+                                finalProperty = bindableInstance.GetType().GetProperty("Value");
+                                if (finalProperty == null) return;
+                            }
+                            else
+                            {
+                                targetType = finalProperty.PropertyType;
+                                targetObject = currentObject;
+                            }
+                            
                             // 根据属性类型转换值
-                            object? convertedValue = finalProperty.PropertyType switch
+                            object? convertedValue = targetType switch
                             {
                                 { } t when t == typeof(int) => (int)_pendingValue,
                                 { } t when t == typeof(float) => (float)_pendingValue,
@@ -420,39 +469,38 @@ namespace krrTools.Configuration
                                 { } t when t == typeof(double?) => (double?)_pendingValue,
                                 _ => _pendingValue
                             };
-                            finalProperty.SetValue(currentObject, convertedValue);
+                            
+                            finalProperty.SetValue(targetObject, convertedValue);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Logger.WriteLine(LogLevel.Error, "[SettingsControls] SettingsSlider debounce writeback error: {0}",
-                    ex.Message);
-            }
-        }
-
-        private void SettingsSlider_IsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (CheckBox != null)
-            {
-                CheckBox.IsEnabled = IsEnabled;
-                InnerSlider.IsEnabled = IsEnabled && (CheckBox.IsChecked ?? false);
-            }
-            else
-            {
-                InnerSlider.IsEnabled = IsEnabled;
+                Logger.WriteLine(LogLevel.Error, "[SettingsControls] OnDebounceTimerTick error: {0}", ex.Message);
             }
         }
 
         private void SettingsSlider_Unloaded(object? sender, RoutedEventArgs e)
         {
-            _debounceTimer?.Stop();
+            LocalizationService.LanguageChanged -= OnLanguageChanged;
+        }
+
+        private void SettingsSlider_IsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is bool isEnabled)
+            {
+                Opacity = isEnabled ? 1.0 : 0.5;
+                IsHitTestVisible = isEnabled;
+            }
         }
 
         private void OnLanguageChanged()
         {
-            if (_isInitialized) UpdateLabelWithValue(InnerSlider.Value);
+            // DynamicLocalizedString will automatically update its Value when language changes
+            // This will trigger the PropertyChanged event which calls UpdateLabelText
+            if (_isInitialized) 
+                UpdateLabelWithValue(InnerSlider.Value);
         }
 
         /// <summary>

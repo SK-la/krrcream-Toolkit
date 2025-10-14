@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using krrTools.Bindable;
 using krrTools.Configuration;
+using krrTools.Core;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace krrTools.Tools.KRRLNTransformer
@@ -11,53 +9,18 @@ namespace krrTools.Tools.KRRLNTransformer
     {
         private readonly IEventBus _eventBus;
 
-        // 节拍显示映射字典
-        public static readonly Dictionary<double, string> AlignValuesDict = new()
-        {
-            { 1, "1/16" },
-            { 2, "1/8" },
-            { 3, "1/7" },
-            { 4, "1/6" },
-            { 5, "1/5" },
-            { 6, "1/4" },
-            { 7, "1/3" },
-            { 8, "1/2" },
-            { 9, "1/1" }
-        };
-
-        public static readonly Dictionary<double, string> LengthThresholdDict = new()
-        {
-            { 0, "Off" },
-            { 1, "1/8" },
-            { 2, "1/6" },
-            { 3, "1/4" },
-            { 4, "1/3" },
-            { 5, "1/2" },
-            { 6, "1/1" },
-            { 7, "3/2" },
-            { 8, "2/1" },
-            { 9, "4/1" },
-            { 10, "∞" }
-        };
-
         public KRRLNTransformerViewModel(KRRLNTransformerOptions options) : base(ConverterEnum.KRRLN, true, options)
         {
             _eventBus = App.Services.GetRequiredService<IEventBus>();
             
-            // Subscribe to all Bindable<T> property changes
-            SubscribeToPropertyChanges();
         }
 
-        private void SubscribeToPropertyChanges()
+        protected override void TriggerPreviewRefresh()
         {
-            // Bindable<T> properties automatically handle change notifications
-            // No manual subscription needed for UI updates
-        }
-
-        private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            // Forward property changes to trigger SettingsChangedEvent
-            OnPropertyChanged(e.PropertyName);
+            // 取消注释可以启动高频刷新，实时看面尾尺寸变化
+            // （对影响无影响，但是暂时有频闪问题，尚未解决）
+            // 默认是防抖刷新
+            // _eventBus.Publish(new PreviewRefreshEvent { NewValue = true });
         }
 
         public IToolOptions GetPreviewOptions()

@@ -1,7 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using krrTools.Configuration;
+﻿using System.Collections.Generic;
 using krrTools.Bindable;
+using krrTools.Core;
 using static krrTools.Localization.Strings;
 
 namespace krrTools.Tools.N2NC
@@ -11,29 +10,24 @@ namespace krrTools.Tools.N2NC
     /// </summary>
     public class N2NCOptions : ToolOptionsBase
     {
-        [Option(LabelKey = nameof(KeysSliderLabel), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double))]
-        public Bindable<double> TargetKeys { get; } = new Bindable<double>();
+        [Option(LabelKey = nameof(KeysSliderLabel), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> TargetKeys { get; } = new Bindable<double>(10);
 
         // 动态最大值将由ViewModel的约束管理处理
-        [Option(LabelKey = nameof(N2NCMaxKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double))]
-        public Bindable<double> MaxKeys { get; } = new Bindable<double>();
+        [Option(LabelKey = nameof(N2NCMaxKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> MaxKeys { get; } = new Bindable<double>(4);
 
-        [Option(LabelKey = nameof(N2NCMinKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double))]
-        public Bindable<double> MinKeys { get; } = new Bindable<double>();
+        [Option(LabelKey = nameof(N2NCMinKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> MinKeys { get; } = new Bindable<double>(1);
 
-        [Option(LabelKey = nameof(N2NCTransformSpeedTemplate), Min = 1, Max = 8, UIType = UIType.Slider, DisplayMapField = nameof(TransformSpeedDict), DataType = typeof(double))]
-        public Bindable<double> TransformSpeed { get; } = new Bindable<double>();
+        [Option(LabelKey = nameof(N2NCTransformSpeedTemplate), Min = 1, Max = 8, UIType = UIType.Slider, DisplayMapField = nameof(TransformSpeedDict), DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> TransformSpeed { get; } = new Bindable<double>(5);
 
         /// <summary>
         /// 默认构造函数，使用默认值
         /// </summary>
         public N2NCOptions()
         {
-            TargetKeys.Value = 10;
-            MaxKeys.Value = 10;
-            MinKeys.Value = 2;
-            TransformSpeed.Value = 4.0;
-
             // Wire up property changed events for Bindable<T> properties
             TargetKeys.PropertyChanged += (_, _) => OnPropertyChanged(nameof(TargetKeys));
             MaxKeys.PropertyChanged += (_, _) => OnPropertyChanged(nameof(MaxKeys));
@@ -54,7 +48,7 @@ namespace krrTools.Tools.N2NC
             { 8, "8" }
         };
 
-        [Option(LabelKey = nameof(SeedButtonLabel), UIType = UIType.NumberBox, DataType = typeof(int?))]
+        [Option(LabelKey = nameof(SeedButtonLabel), UIType = UIType.NumberBox, DataType = typeof(int?), IsRefresher = true)]
         public int? Seed
         {
             get => _seed;

@@ -6,6 +6,8 @@ using krrTools.Beatmaps;
 using krrTools.Configuration;
 using OsuParsers.Beatmaps;
 using OsuParsers.Beatmaps.Objects.Mania;
+using OsuParsers.Extensions;
+using OsuParsers.Enums;
 
 namespace krrTools.Tools.KRRLNTransformer
 {
@@ -24,174 +26,280 @@ namespace krrTools.Tools.KRRLNTransformer
             ApplyChangesToHitObjects(beatmap, processedMatrix, timeAxis, options);
         }
 
-        private NoteMatrix BuildAndProcessMatrix(NoteMatrix matrix, List<int> timeAxis, Beatmap beatmap,
+        private Matrix BuildAndProcessMatrix(NoteMatrix matrix, List<int> timeAxis, Beatmap beatmap,
             KRRLNTransformerOptions parameters)
         {
             // 创建带种子的随机数生成器
             var RG = parameters.Seed.Value.HasValue
                 ? new Random(parameters.Seed.Value.Value)
                 : new Random();
-
-            var ManiaObjects = beatmap.HitObjects.OfType<ManiaNote>().ToList();
-            var MainBPM = beatmap.MainBPM;
-            // var timeAxis1 = new List<int>();
-
-            // 使用传入的矩阵和时间轴，而不是重新构建
-            var matrix1 = matrix;
-            var timeAxis1 = timeAxis;
-
-            // 初始化原始长度矩阵(用于不处理Org时的面条对齐，也要和原面条对齐)和可用时间矩阵，以及长短面等待修改的矩阵
-            var lnLength = DeepCopyMatrix(matrix1);
-            var availableTimeMtx = DeepCopyMatrix(matrix1);
-            var longLnWaitModify = DeepCopyMatrix(matrix1);
-            var shortLnWaitModify = DeepCopyMatrix(matrix1);
-
-            // 完成坐标矩阵，长度矩阵，可用时间矩阵初始化
-            for (var i = 0; i < ManiaObjects.Count; i++)
+            
+            var ManiaObjects = beatmap.HitObjects.AsManiaNotes();
+            int cs = (int)beatmap.DifficultySection.CircleSize;
+            int rows = beatmap.Rows;
+            
+       
+            //初始化坐标矩阵以及时间轴
+            (Matrix matrix1 , List<int> timeAxis1) = beatmap.getMTXandTimeAxis();
+            
+          
+            //初始化各种矩阵,减少对象访问提高速度（注意不要调整初始化的顺序，有先后顺序之分)
+            Matrix availableTimeMtx = GenerateAvailableTimeMatrix(matrix1, timeAxis1);
+            Matrix longLnWaitModify = new Matrix(rows, cs);
+            Matrix shortLnWaitModify = new Matrix(rows, cs);
+            DoubleMatrix beatLengthMtx = GenerateBeatLengthMatrix(matrix1, ManiaObjects);
+            BoolMatrix orgIsLNMatrix = GenerateOrgIsLN(matrix1, ManiaObjects);
+            
+            if (parameters.Alignment.Value.HasValue)
             {
-                var obj = ManiaObjects[i];
-                var rowindex = obj.RowIndex;
-                var colindex = obj.ColIndex;
-                if (rowindex.HasValue && colindex.HasValue &&
-                    rowindex.Value >= 0 && rowindex.Value < matrix1.Rows &&
-                    colindex.Value >= 0 && colindex.Value < matrix1.Cols)
-                {
-                    matrix1[rowindex.Value, colindex.Value] = i;
-                    lnLength[rowindex.Value, colindex.Value] = obj.HoldLength;
-                }
+
             }
-
-            // availableTimeMtx生成
-            for (var j = 0; j < matrix1.Cols; j++)
-            {
-                var currentRow = -1;
-                for (var i = 0; i < matrix1.Rows; i++)
-                    if (matrix1[i, j] >= 0)
-                    {
-                        if (currentRow >= 0)
-                        {
-                            var nextRow = i;
-                            var availableTime = timeAxis1[nextRow] - timeAxis1[currentRow];
-                            availableTimeMtx[currentRow, j] = availableTime;
-                        }
-
-                        currentRow = i;
-                    }
-
-                if (currentRow >= 0)
-                {
-                    var lastTime = timeAxis1.Last();
-                    var availableTime = lastTime - timeAxis1[currentRow];
-                    availableTimeMtx[currentRow, j] = availableTime;
-                }
-            }
-
-            // 完成是否是原LN矩阵
-            var orgIsLN = new bool[matrix1.Rows, matrix1.Cols];
-            foreach (var obj in ManiaObjects)
-                if (obj.GetType() == typeof(ManiaHoldNote))
-                {
-                    var rowindex = obj.RowIndex;
-                    var colindex = obj.ColIndex;
-                    if (rowindex.HasValue && colindex.HasValue &&
-                        rowindex.Value >= 0 && rowindex.Value < orgIsLN.GetLength(0) &&
-                        colindex.Value >= 0 && colindex.Value < orgIsLN.GetLength(1))
-                        orgIsLN[rowindex.Value, colindex.Value] = true;
-                }
-
-            //是否处理原始面条初步判定
+            
+            //将原始LN标记为-1,跳过处理
             if (!parameters.ProcessOriginalIsChecked.Value)
-                for (var i = 0; i < matrix1.Rows; i++)
-                for (var j = 0; j < matrix1.Cols; j++)
-                    if (orgIsLN[i, j])
-                        matrix1[i, j] = -1;
-
-            //通过百分比标记处理位置
-            var borderKey = parameters.LengthThreshold.Value.HasValue ? (int)parameters.LengthThreshold.Value.Value : 4; // 默认值4
-            if (!borderlist.ContainsKey(borderKey)) borderKey = 0; // 默认值
-
-            var shortLNFlag = new bool[matrix1.Rows, matrix1.Cols];
-            var longLNFlag = new bool[matrix1.Rows, matrix1.Cols];
-            for (var i = 0; i < matrix1.Rows; i++)
-            for (var j = 0; j < matrix1.Cols; j++)
-                if (matrix1[i, j] >= 0 && matrix1[i, j] < ManiaObjects.Count)
-                {
-                    if (availableTimeMtx[i, j] >
-                        borderlist[borderKey] * ManiaObjects[matrix1[i, j]].BeatLengthOfThisNote)
-                        longLNFlag[i, j] = true;
-                    else
-                        shortLNFlag[i, j] = true;
-                }
-
+            {
+                MarkOriginalLNAsSkipped(matrix1, orgIsLNMatrix);
+            }
+            
+            //生成长短面标记
+            var borderKey = (int)(parameters.LengthThreshold.Value ?? 5);
+            var (shortLNFlag, longLNFlag) = GenerateLNFlags(matrix1, ManiaObjects, availableTimeMtx, beatLengthMtx, borderKey);
+            
             longLNFlag = MarkByPercentage(longLNFlag, parameters.LongPercentage.Value, RG);
             shortLNFlag = MarkByPercentage(shortLNFlag, parameters.ShortPercentage.Value, RG);
             longLNFlag = LimitTruePerRow(longLNFlag, (int)parameters.LongLimit.Value, RG);
             shortLNFlag = LimitTruePerRow(shortLNFlag, (int)parameters.ShortLimit.Value, RG);
 
             //正式生成longLN矩阵
-            for (var i = 0; i < matrix1.Rows; i++)
-            for (var j = 0; j < matrix1.Cols; j++)
-                if (longLNFlag[i, j])
-                {
-                    var indexObj = matrix1[i, j];
-                    var NewLength = GenerateTriangularRandom(
-                        borderlist[borderKey] * ManiaObjects[indexObj].BeatLengthOfThisNote,
-                        availableTimeMtx[i, j] - 600000 / MainBPM / 8,
-                        availableTimeMtx[i, j] * parameters.LongPercentage.Value / 100,
-                        (int)parameters.LongRandom.Value, RG
-                    );
-                    longLnWaitModify[i, j] = NewLength;
-                }
+            GenerateLongLNMatrix(matrix1, longLnWaitModify, longLNFlag, ManiaObjects, 
+                availableTimeMtx, beatLengthMtx, borderKey, 
+                parameters.LongLevel.Value, (int)parameters.LongRandom.Value, RG);
 
-            //正式生成shortLN矩阵
-            for (var i = 0; i < matrix1.Rows; i++)
-            for (var j = 0; j < matrix1.Cols; j++)
-                if (shortLNFlag[i, j])
-                {
-                    var indexObj = matrix1[i, j];
-                    var NewLength = GenerateTriangularRandom(
-                        600000 / MainBPM / 8,
-                        borderlist[borderKey] * ManiaObjects[indexObj].BeatLengthOfThisNote,
-                        availableTimeMtx[i, j] * parameters.ShortPercentage.Value / 100,
-                        (int)parameters.ShortRandom.Value, RG
-                    );
-                    shortLnWaitModify[i, j] = NewLength;
-                }
+            GenerateShortLNMatrix(matrix1, shortLnWaitModify, shortLNFlag, ManiaObjects,
+                availableTimeMtx, beatLengthMtx, borderKey,
+                parameters.ShortLevel.Value, (int)parameters.ShortRandom.Value, RG);
 
             var result = MergeMatrices(longLnWaitModify, shortLnWaitModify);
+            
+            if (parameters.Alignment.Value.HasValue)
+            {
 
+            }
+            
+            return result;
+        }
+        
+        // 生成是否是原始LN矩阵
+        private void MarkOriginalLNAsSkipped(Matrix matrix, BoolMatrix orgIsLNMatrix)
+        {
+            var matrixSpan = matrix.AsSpan();
+            var orgIsLNSpan = orgIsLNMatrix.AsSpan();
+            for (var i = 0; i < matrixSpan.Length; i++)
+            {
+                if (orgIsLNSpan[i] && matrixSpan[i] >= 0)
+                    matrixSpan[i] = -1;
+            }
+        }
+        
+        //生成长短面标记
+        private (BoolMatrix shortLNFlag, BoolMatrix longLNFlag) GenerateLNFlags(
+            Matrix matrix1, 
+            List<ManiaNote> maniaObjects, 
+            Matrix availableTimeMtx, 
+            DoubleMatrix beatLengthMtx,
+            int borderKey)
+        {
+            var shortLNFlag = new BoolMatrix(matrix1.Rows, matrix1.Cols);
+            var longLNFlag = new BoolMatrix(matrix1.Rows, matrix1.Cols);
+    
+            var matrixSpan = matrix1.AsSpan();
+            var availableTimeSpan = availableTimeMtx.AsSpan();
+            var beatLengthSpan = beatLengthMtx.AsSpan();
+            var shortLNSpan = shortLNFlag.AsSpan();
+            var longLNSpan = longLNFlag.AsSpan();
+            
+            double borderValue = borderList[borderKey];
 
-            return new NoteMatrix(result);
+            for (int i = 0; i < matrixSpan.Length; i++)
+            {
+                int index = matrixSpan[i];
+                if (index >= 0 && index < maniaObjects.Count)
+                {
+                    if (availableTimeSpan[i] > borderValue * beatLengthSpan[i])
+                        longLNSpan[i] = true;
+                    else
+                        shortLNSpan[i] = true;
+                }
+            }
+            return (shortLNFlag, longLNFlag);
+        }
+        
+        //是否是原始LN生成
+        private BoolMatrix GenerateOrgIsLN(Matrix matrix1, List<ManiaNote> maniaObjects)
+        {
+            int cols = matrix1.Cols;
+            var orgIsLN = new BoolMatrix(matrix1.Rows, cols);
+            var orgIsLNSpan = orgIsLN.AsSpan();
+            
+    
+            foreach (var obj in maniaObjects)
+            {
+                var rowIndex = obj.RowIndex;
+                var colIndex = obj.ColIndex;
+                if (rowIndex.HasValue && colIndex.HasValue &&
+                    rowIndex.Value >= 0 && rowIndex.Value < matrix1.Rows &&
+                    colIndex.Value >= 0 && colIndex.Value < cols)
+                {
+                    // 直接通过 Span 设置值，避免索引器开销
+                    if (obj.EndTime > obj.StartTime)
+                        orgIsLNSpan[rowIndex.Value * cols + colIndex.Value] = true;
+                }
+            }
+    
+            return orgIsLN;
+        }
+        
+        // beatLengthMtx生成
+        private DoubleMatrix GenerateBeatLengthMatrix(Matrix matrix1, List<ManiaNote> maniaObjects)
+        {
+            var beatLengthMtx = new DoubleMatrix(matrix1.Rows, matrix1.Cols);
+            var beatLengthSpan = beatLengthMtx.AsSpan();
+            var matrixSpan = matrix1.AsSpan();
+            int length = matrixSpan.Length;
+
+            for (int i = 0; i < length; i++)
+            {
+                int index = matrixSpan[i];
+                if (index >= 0 && index < maniaObjects.Count)
+                {
+                    beatLengthSpan[i] = maniaObjects[index].BeatLengthOfThisNote;
+                }
+            }
+            return beatLengthMtx;
+        }
+        
+        // 正式生成longLN矩阵 - 优化版本
+        private void GenerateLongLNMatrix(Matrix matrix1, Matrix longLnWaitModify, BoolMatrix longLNFlag, 
+            List<ManiaNote> maniaObjects, Matrix availableTimeMtx, DoubleMatrix beatLengthMtx,
+            int borderKey, double LNLevel, int longRandom, Random random)
+        {
+            var matrixSpan = matrix1.AsSpan();
+            var longFlagSpan = longLNFlag.AsSpan();
+            var availableTimeSpan = availableTimeMtx.AsSpan();
+            var beatLengthSpan = beatLengthMtx.AsSpan();
+            var resultSpan = longLnWaitModify.AsSpan();
+            
+            double borderValue = borderList[borderKey];
+            
+            for (int i = 0; i < matrixSpan.Length; i++)
+            {
+                if (longFlagSpan[i])
+                {
+                    var indexObj = matrixSpan[i];
+                    var newLength = GenerateRandom(
+                        borderValue * maniaObjects[indexObj].BeatLengthOfThisNote,
+                        availableTimeSpan[i] - beatLengthSpan[i] / 8,
+                        availableTimeSpan[i] * LNLevel / 100,
+                        longRandom, random
+                    );
+                    resultSpan[i] = newLength;
+                }
+            }
         }
 
-        private Beatmap ApplyChangesToHitObjects(Beatmap beatmap, NoteMatrix mergeMTX, List<int> timeAxis,
-            KRRLNTransformerOptions options)
+        // 正式生成shortLN矩阵 - 优化版本
+        private void GenerateShortLNMatrix(Matrix matrix1, Matrix shortLnWaitModify, BoolMatrix shortLNFlag,
+            List<ManiaNote> maniaObjects, Matrix availableTimeMtx, DoubleMatrix beatLengthMtx,
+            int borderKey, double LNLevel, int shortRandom, Random random)
         {
-            var matrix2 = mergeMTX.GetData();
-            var timeAxisTemp = timeAxis; // 使用传入的 timeAxis
-
-            var ManiaObjects = beatmap.HitObjects.OfType<ManiaNote>().ToList();
-
-            for (var i = 0; i < ManiaObjects.Count; i++)
+            var matrixSpan = matrix1.AsSpan();
+            var shortFlagSpan = shortLNFlag.AsSpan();
+            var availableTimeSpan = availableTimeMtx.AsSpan();
+            var beatLengthSpan = beatLengthMtx.AsSpan();
+            var resultSpan = shortLnWaitModify.AsSpan();
+            
+            double borderValue = borderList[borderKey];
+            
+            for (int i = 0; i < matrixSpan.Length; i++)
             {
-                var obj = ManiaObjects[i];
-                var rowindex = obj.RowIndex;
-                var colindex = obj.ColIndex;
-                if (rowindex.HasValue && colindex.HasValue &&
-                    rowindex.Value >= 0 && rowindex.Value < matrix2.GetLength(0) &&
-                    colindex.Value >= 0 && colindex.Value < matrix2.GetLength(1))
-                    matrix2[rowindex.Value, colindex.Value] = beatmap.HitObjects.IndexOf(obj);
-            }
-
-            for (var i = 0; i < mergeMTX.Rows; i++)
-            for (var j = 0; j < mergeMTX.Cols; j++)
-                if (mergeMTX[i, j] > 0 && matrix2[i, j] >= 0)
+                if (shortFlagSpan[i])
                 {
-                    var index = (int)matrix2[i, j];
-                    if (index >= 0 && index < beatmap.HitObjects.Count && beatmap.HitObjects[index] is ManiaNote note)
-                        beatmap.HitObjects[index] = ConvertToHoldNote(note, mergeMTX[i, j] + note.StartTime);
+                    var indexObj = matrixSpan[i];
+                    var newLength = GenerateRandom(
+                        Math.Max(beatLengthSpan[i] / 4, 50),
+                        borderValue * maniaObjects[indexObj].BeatLengthOfThisNote,
+                        availableTimeSpan[i] * LNLevel / 100,
+                        shortRandom, random
+                    );
+                    resultSpan[i] = newLength;
+                }
+            }
+        }
+        
+        // availableTimeMtx生成 
+        private Matrix GenerateAvailableTimeMatrix(Matrix matrix1, List<int> timeAxis1)
+        {
+            var availableTimeMtx = new Matrix(matrix1.Rows, matrix1.Cols);
+            
+            var lastTime = timeAxis1.Last();
+            
+            Span<int> matrixSpan = matrix1.AsSpan();
+            Span<int> timeMtxSpan = availableTimeMtx.AsSpan();
+
+            int rows = matrix1.Rows;
+            int cols = matrix1.Cols;
+
+            for (var j = 0; j < cols; j++)
+            {
+                var currentRow = -1;
+                var colOffset = j;
+
+                for (var i = 0; i < rows; i++)
+                {
+                    int index = i * cols + colOffset;
+                    if (matrixSpan[index] >= 0)
+                    {
+                        if (currentRow >= 0)
+                        {
+                            var nextRow = i;
+                            var availableTime = timeAxis1[nextRow] - timeAxis1[currentRow];
+                            timeMtxSpan[currentRow * cols + colOffset] = availableTime;
+                        }
+                        currentRow = i;
+                    }
                 }
 
+                if (currentRow >= 0)
+                {
+                    var availableTime = lastTime - timeAxis1[currentRow];
+                    timeMtxSpan[currentRow * cols + colOffset] = availableTime;
+                }
+            }
+            
+            return availableTimeMtx;
+        }
+        
+        private Beatmap ApplyChangesToHitObjects(Beatmap beatmap, Matrix mergeMTX , List<int> timeAxis,
+            KRRLNTransformerOptions options)
+        {
+            (Matrix matrix2, List<int> timeAxis2) = beatmap.getMTXandTimeAxis();
+            int cs = (int)beatmap.DifficultySection.CircleSize;
+            int rows = beatmap.Rows;
+            var ManiaObjects = beatmap.HitObjects.AsManiaNotes();
+
+            var mergeMTXspan = mergeMTX.AsSpan();
+            var matrix2Span = matrix2.AsSpan();
+
+            for (int i = 0; i < mergeMTXspan.Length; i++)
+            {
+                if (mergeMTXspan[i] >= 0) 
+                {
+                    int index = matrix2Span[i];
+                    //使用更新法修改endtime，不能直接赋值，会导致note无法变成LN
+                    beatmap.HitObjects.UpdateHitObject(index, beatmap.HitObjects[index].AsManiaNote()
+                        .CloneNote(EndTime: mergeMTXspan[i] + beatmap.HitObjects[index].StartTime));
+                }   
+            }
             // 修改元数据
             // 避免重复添加 Version 前缀
             if (beatmap.MetadataSection.Version != null && !beatmap.MetadataSection.Version.Contains("[KRR LN.]"))
@@ -212,8 +320,9 @@ namespace krrTools.Tools.KRRLNTransformer
 
             return beatmap;
         }
-
-        private bool[,] MarkByPercentage(bool[,] MTX, double P, Random random)
+        
+        // 百分比标记方法
+        private BoolMatrix MarkByPercentage(BoolMatrix MTX, double P, Random random)
         {
             // 边界情况处理
             if (P >= 100)
@@ -222,17 +331,27 @@ namespace krrTools.Tools.KRRLNTransformer
 
             if (P <= 0)
                 // 返回全false矩阵
-                return new bool[MTX.GetLength(0), MTX.GetLength(1)];
+                return new BoolMatrix(MTX.Rows, MTX.Cols);
 
+            var mtxSpan = MTX.AsSpan();
+            int rows = MTX.Rows;
+            int cols = MTX.Cols;
+            
             // 收集所有true的位置
             List<(int row, int col)> truePositions = new();
-            for (var i = 0; i < MTX.GetLength(0); i++)
-            for (var j = 0; j < MTX.GetLength(1); j++)
-                if (MTX[i, j])
-                    truePositions.Add((i, j));
+            for (int i = 0; i < mtxSpan.Length; i++)
+            {
+                if (mtxSpan[i])
+                {
+                    int row = i / cols;
+                    int col = i % cols;
+                    truePositions.Add((row, col));
+                }
+            }
 
             // 如果没有true位置，直接返回全false矩阵
-            if (truePositions.Count == 0) return new bool[MTX.GetLength(0), MTX.GetLength(1)];
+            if (truePositions.Count == 0) 
+                return new BoolMatrix(MTX.Rows, MTX.Cols);
 
             var ratio = 1.0 - P / 100.0;
             // 计算需要设置为false的数量
@@ -266,44 +385,56 @@ namespace krrTools.Tools.KRRLNTransformer
             }
 
             // 构建结果矩阵
-            var result = new bool[MTX.GetLength(0), MTX.GetLength(1)];
-            for (var i = 0; i < MTX.GetLength(0); i++)
-            for (var j = 0; j < MTX.GetLength(1); j++)
-                if (MTX[i, j] && !positionsToSetFalse.Contains((i, j)))
-                    result[i, j] = true;
+            var result = new BoolMatrix(MTX.Rows, MTX.Cols);
+            var resultSpan = result.AsSpan();
+            
+            // 复制原始矩阵数据
+            mtxSpan.CopyTo(resultSpan);
+            
+            // 设置需要为false的位置
+            foreach (var (row, col) in positionsToSetFalse)
+            {
+                resultSpan[row * cols + col] = false;
+            }
 
             return result;
         }
 
-        private bool[,] LimitTruePerRow(bool[,] MTX, int limit, Random random)
+        private BoolMatrix LimitTruePerRow(BoolMatrix MTX, int limit, Random random)
         {
-            var rows = MTX.GetLength(0);
-            var cols = MTX.GetLength(1);
+            var rows = MTX.Rows;
+            var cols = MTX.Cols;
 
-            var result = new bool[rows, cols];
+            var result = new BoolMatrix(rows, cols);
+            var mtxSpan = MTX.AsSpan();
+            var resultSpan = result.AsSpan();
 
             for (var i = 0; i < rows; i++)
             {
                 var truePositions = new List<int>();
                 for (var j = 0; j < cols; j++)
-                    if (MTX[i, j])
+                {
+                    if (mtxSpan[i * cols + j])
                         truePositions.Add(j);
+                }
 
                 if (truePositions.Count > limit)
                 {
                     var shuffledPositions = truePositions.OrderBy(x => random.Next()).ToList();
-                    for (var k = 0; k < limit; k++) result[i, shuffledPositions[k]] = true;
+                    for (var k = 0; k < limit; k++) 
+                        resultSpan[i * cols + shuffledPositions[k]] = true;
                 }
                 else
                 {
-                    for (var j = 0; j < cols; j++) result[i, j] = MTX[i, j];
+                    for (var j = 0; j < cols; j++) 
+                        resultSpan[i * cols + j] = mtxSpan[i * cols + j];
                 }
             }
 
             return result;
         }
 
-        private int GenerateTriangularRandom(double D, double U, double M, int P, Random r)
+        private int GenerateRandom(double D, double U, double M, int P, Random r)
         {
             if (P <= 0 || D >= U || M > U)
                 return M > U ? (int)U : (int)M;
@@ -311,6 +442,7 @@ namespace krrTools.Tools.KRRLNTransformer
                 return (int)D;
             if (P >= 100)
                 P = 100;
+    
             // 计算实际百分比
             var p = P / 100.0;
 
@@ -321,74 +453,128 @@ namespace krrTools.Tools.KRRLNTransformer
             // 确保新范围在原范围内
             d = Math.Max(d, D);
             u = Math.Min(u, U);
-
-            // 如果范围无效，则返回中心值
+            
             if (d >= u)
                 return (int)M;
 
-            // 使用三角分布生成随机数
-            // 三角分布公式：F(x) = (x-a)²/((b-a)(c-a))  when a≤x≤c
-            //              F(x) = 1-(b-x)²/((b-a)(b-c))  when c≤x≤b
-            var a = d; // 下限
-            var b = u; // 上限
-            var c = M; // 众数(期望最大值)
+            // 使用 Beta[2,2] 分布生成随机数
+            // 然后 X = (U1 + U2) / 2 服从 Beta[2,2] 分布
+            var u1 = r.NextDouble();
+            var u2 = r.NextDouble();
+            var betaRandom = (u1 + u2) / 2.0;
 
-            // 确保众数在范围内
-            c = Math.Max(a, Math.Min(b, c));
-
-            var random = r;
-            var u_random = random.NextDouble(); // 生成[0,1)的随机数
-
+            // 将 Beta[2,2] 分布的随机数映射到 [d, u] 区间
+            var range = u - d;
+            var mRelative = (M - d) / range; // M 在 [d,u] 中的相对位置
+            
             double result;
-            if (u_random <= (c - a) / (b - a))
-                result = a + Math.Sqrt(u_random * (b - a) * (c - a));
+            if (betaRandom <= 0.5)
+            {
+                result = d + (mRelative * betaRandom / 0.5) * range;
+            }
             else
-                result = b - Math.Sqrt((1 - u_random) * (b - a) * (b - c));
+            {
+                result = d + (mRelative + (1 - mRelative) * (betaRandom - 0.5) / 0.5) * range;
+            }
 
             return (int)result;
         }
-
-        private int[,] MergeMatrices(int[,] matrix1, int[,] matrix2)
+        
+        private Matrix MergeMatrices(Matrix matrix1, Matrix matrix2)
         {
-            var rows = matrix1.GetLength(0);
-            var cols = matrix1.GetLength(1);
+            // 确保矩阵维度一致
+            if (matrix1.Rows != matrix2.Rows || matrix1.Cols != matrix2.Cols)
+                throw new ArgumentException("Matrix dimensions must match");
 
-            var result = new int[rows, cols];
-
-            for (var i = 0; i < rows; i++)
-            for (var j = 0; j < cols; j++)
+            var rows = matrix1.Rows;
+            var cols = matrix1.Cols;
+    
+            // 创建结果矩阵
+            var result = new Matrix(rows, cols);
+    
+            // 使用 Span 进行高效的批量操作
+            var span1 = matrix1.AsSpan();
+            var span2 = matrix2.AsSpan();
+            var resultSpan = result.AsSpan();
+    
+            // 使用单层循环遍历所有元素
+            for (int i = 0; i < span1.Length; i++)
             {
-                var val1 = matrix1[i, j];
-                var val2 = matrix2[i, j];
-
+                var val1 = span1[i];
+                var val2 = span2[i];
+        
                 if (val1 >= -1 && val2 >= -1)
-                    result[i, j] = Math.Max(val1, val2);
+                    resultSpan[i] = Math.Max(val1, val2);
                 else if (val1 >= -1)
-                    result[i, j] = val1;
+                    resultSpan[i] = val1;
                 else if (val2 >= -1)
-                    result[i, j] = val2;
+                    resultSpan[i] = val2;
                 else
-                    result[i, j] = -1; // 或者保持不变，根据需求决定
+                    resultSpan[i] = -1; // 或者保持不变，根据需求决定
             }
-
+    
             return result;
         }
 
-        private Dictionary<int, double> borderlist = new()
+        private Dictionary<int, double> borderList = new()
         {
+            /*
+            { 0, "AllIsLongLN" },
+            { 1, "1/8" },
+            { 2, "1/6" },
+            { 3, "1/4" },
+            { 4, "1/3" },
+            { 5, "1/2" },
+            { 6, "2/3" },
+            { 7, "3/4" },
+            { 8, "1" },
+            { 9, "4/3" },
+            { 10, "3/2" },
+            { 11, "2/1"},
+            { 12, "3/1" },
+            { 13, "4/1"},
+            { 14, "AllIsShortLN"}
+            */
+            
             { 0, 0 },
             { 1, 1.0 / 8 },
             { 2, 1.0 / 6 },
             { 3, 1.0 / 4 },
             { 4, 1.0 / 3 },
             { 5, 1.0 / 2 },
-            { 6, 1.0 / 1 },
-            { 7, 3.0 / 2 },
-            { 8, 2.0 / 1 },
-            { 9, 4.0 / 1 },
-            { 10, 999 }
+            { 6, 2.0 / 3 },
+            { 7, 3.0 / 4 },
+            { 8, 1.0 },
+            { 9, 4.0 / 3 },
+            { 10, 3.0 / 2},
+            { 11, 2.0 / 1},
+            { 12, 3.0 / 1},
+            { 13, 4.0 / 1},
+            { 14, 999 }
         };
-
+        
+        private Dictionary<int, double> alignList = new()
+        {
+            /*
+            { 1, "1/8" },
+            { 2, "1/7" },
+            { 3, "1/6" },
+            { 4, "1/5" },
+            { 5, "1/4" },
+            { 6, "1/3" },
+            { 7, "1/2" },
+            { 8, "1/1" }
+            */
+            { 1, 1.0 / 8 },
+            { 2, 1.0 / 7 },
+            { 3, 1.0 / 6 },
+            { 4, 1.0 / 5 },
+            { 5, 1.0 / 4 },
+            { 6, 2.0 / 3 },
+            { 7, 3.0 / 2 },
+            { 8, 1.0 },
+        };
+        
         //修改难度名，tag，和标签等
         private void changeMeta(Beatmap beatmap)
         {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace krrTools.Core
 {
     /// <summary>
-    /// 模块管理器接口 - 只负责模块注册和管理
+    /// 模块管理器接口 - 只负责模块注册和管理，动态获取活动模块的核心实现
     /// </summary>
     public interface IModuleManager
     {
@@ -26,7 +26,7 @@ namespace krrTools.Core
         /// 根据名称获取工具
         /// </summary>
         /// <param name="toolName">工具名称</param>
-        /// <returns>工具实例，失败返回null</returns>
-        ITool? GetToolName(string toolName);
+        /// <returns>工具实例，如果未找到则返回 null</returns>
+        IToolModule? GetToolByName(string toolName);
     }
 }

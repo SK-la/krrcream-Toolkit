@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using krrTools.Bindable;
+using krrTools.Core;
 using krrTools.Localization;
 using krrTools.UI;
 using Microsoft.Extensions.Logging;
@@ -16,12 +17,8 @@ using TextBlock = Wpf.Ui.Controls.TextBlock;
 
 namespace krrTools.Configuration
 {
-
-
     public static class SettingsBinder
     {
-
-
         private static string GetLocalizedString(string? key)
         {
             if (string.IsNullOrEmpty(key)) return "";
@@ -179,7 +176,7 @@ namespace krrTools.Configuration
             var attr = propertyInfo.GetCustomAttribute<OptionAttribute>();
             if (attr == null) return new TextBlock { Text = $"No OptionAttribute for {propertyInfo.Name}" };
 
-            var label = GetLocalizedString(attr.LabelKey);
+            var labelKey = GetLocalizedString(attr.LabelKey);
             var tooltip = string.IsNullOrEmpty(attr.TooltipKey) ? null : GetLocalizedString(attr.TooltipKey);
 
             // 如果没有提供 valueDisplayMap，但属性有 DisplayMapField，则尝试获取
@@ -213,7 +210,7 @@ namespace krrTools.Configuration
 
                 var slider = new SettingsSlider<T>
                 {
-                    LabelText = label,
+                    LabelKey = labelKey,
                     TooltipText = tooltip ?? "",
                     Min = min,
                     Max = max,
@@ -344,7 +341,7 @@ namespace krrTools.Configuration
             var attr = propertyInfo.GetCustomAttribute<OptionAttribute>();
             if (attr == null) return new TextBlock { Text = $"No OptionAttribute for {propertyInfo.Name}" };
 
-            var label = GetLocalizedString(attr.LabelKey);
+            var labelKey = GetLocalizedString(attr.LabelKey);
             var tooltip = string.IsNullOrEmpty(attr.TooltipKey) ? null : GetLocalizedString(attr.TooltipKey);
 
             if (IsNumericType(propertyInfo.PropertyType))
@@ -366,7 +363,7 @@ namespace krrTools.Configuration
 
                 var slider = new SettingsSlider<T>
                 {
-                    LabelText = label,
+                    LabelKey = labelKey,
                     TooltipText = tooltip ?? "",
                     Min = min,
                     Max = max, // 初始最大值，会被动态绑定覆盖
@@ -394,7 +391,7 @@ namespace krrTools.Configuration
             var attr = propertyInfo.GetCustomAttribute<OptionAttribute>();
             if (attr == null) return new TextBlock { Text = $"No OptionAttribute for {propertyInfo.Name}" };
 
-            var label = GetLocalizedString(attr.LabelKey);
+            var labelKey = GetLocalizedString(attr.LabelKey);
             var tooltip = string.IsNullOrEmpty(attr.TooltipKey) ? null : GetLocalizedString(attr.TooltipKey);
 
             // 获取滑条配置
@@ -424,7 +421,7 @@ namespace krrTools.Configuration
             {
                 var slider = new SettingsSlider<T>
                 {
-                    LabelText = label,
+                    LabelKey = labelKey,
                     TooltipText = tooltip ?? "",
                     Min = sliderConfig.Min,
                     Max = sliderConfig.Max,
