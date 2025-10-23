@@ -103,17 +103,14 @@ public class BeatmapTransformationSettingsTests
         options.PropertyChanged += (_, e) => propertyChangedEvents.Add(e);
 
         // Act
-        options.SingleSideKeyCount.Value = 8;
         options.LMirror.Value = true;
         options.LDensity.Value = true; // 从默认false改为true才会触发事件
 
         // Assert
-        Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(options.SingleSideKeyCount));
         Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(options.LMirror));
         Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(options.LDensity));
 
         // 验证值确实已更新
-        Assert.Equal(8, options.SingleSideKeyCount.Value);
         Assert.True(options.LMirror.Value);
         Assert.True(options.LDensity.Value);
     }
@@ -139,7 +136,7 @@ public class BeatmapTransformationSettingsTests
             // Assert
             Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(viewModel.TargetKeys));
             Assert.Equal(10, viewModel.TargetKeys); // 设置应该已更新
-            Assert.Equal(7, options.TargetKeys.Value); // 底层选项应该是设置的值
+            Assert.Equal(10, options.TargetKeys.Value); // 底层选项应该被更新为新值
         });
     }
 

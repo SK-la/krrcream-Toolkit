@@ -1,17 +1,75 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
-using System.Windows.Media;
-using krrTools.Beatmaps;
 using krrTools.Configuration;
 using krrTools.UI;
 
 namespace krrTools.Tools.KRRLVAnalysis
 {
+
+
+    /// <summary>
+    /// LV分析器的列配置
+    /// 统一管理UI列和导出功能的属性映射
+    /// </summary>
+    public static class KRRLVAnalysisColumnConfig
+    {
+        /// <summary>
+        /// 列配置：(属性名, 显示名, 宽度, 格式)
+        /// 显示完整的基础信息和性能分析数据
+        /// </summary>
+        public static readonly (string Property, string Header, double Width, string Format)[] Columns =
+        [
+            ("XXY_SR", "XXY SR", double.NaN, "F2"),
+            ("KRR_LV", "KRR LV", double.NaN, "F2"),
+            ("YLs_LV", "YLS LV", double.NaN, "F2"),
+            
+            ("MaxKPS", "Max KPS", double.NaN, "F2"),
+            ("AvgKPS", "Avg KPS", double.NaN, "F2"),
+            ("LN_Percent", "LN%", double.NaN, "F2"),
+            ("KeyCount", "Keys", double.NaN, ""),
+            ("NotesCount", "Notes", double.NaN, ""),
+            
+            ("Title", "Title", double.NaN, ""),
+            ("Artist", "Artist", double.NaN, ""),
+            ("Diff", "Diff", double.NaN, ""),
+            ("Creator", "Creator", double.NaN, ""),
+            ("BPMDisplay", "BPM", double.NaN, ""),
+
+            
+            ("OD", "OD", double.NaN, "F1"),
+            ("HP", "HP", double.NaN, "F1"),
+            ("Status", "Status", double.NaN, ""),
+            ("FilePath", "FilePath", double.NaN, "")
+        ];
+
+        /// <summary>
+        /// 导出属性配置：(属性名, 显示名)
+        /// </summary>
+        public static readonly (string Property, string Header)[] ExportProperties =
+        [
+            ("KRR_LV", "KRR LV"),
+            ("YLs_LV", "YLS LV"),
+            ("XXY_SR", "XXY SR"),
+            ("Title", "Title"),
+            ("Diff", "Diff"),
+            ("Artist", "Artist"),
+            ("Creator", "Creator"),
+            ("KeyCount", "Keys"),
+            ("NotesCount", "Notes"),
+            ("MaxKPS", "Max KPS"),
+            ("AvgKPS", "Avg KPS"),
+            ("BPMDisplay", "BPM"),
+            ("OD", "OD"),
+            ("HP", "HP"),
+            ("LNPercent", "LN%"),
+            ("BeatmapID", "beatmapID"),
+            ("BeatmapSetID", "beatmapSetId"),
+            ("FilePath", "filePath")
+        ];
+    }
+
     public class KRRLVAnalysisView : UserControl
     {
         private readonly KRRLVAnalysisViewModel _analysisViewModel;
@@ -23,93 +81,116 @@ namespace krrTools.Tools.KRRLVAnalysis
         {
             _analysisViewModel = new KRRLVAnalysisViewModel();
             DataContext = _analysisViewModel;
-
-            BuildUI();
+            AllowDrop = true;
+            Focusable = true;
             
-            SharedUIComponents.LanguageChanged += OnLanguageChanged;
-            Unloaded += (_, _) => SharedUIComponents.LanguageChanged -= OnLanguageChanged;
+            BuildUI();
         }
 
         private void BuildUI()
         {
-            // control layout only; host sets size and location
-            AllowDrop = true;
-            Focusable = true;
-
             var root = new Grid();
-            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 数据表行
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 按钮行
 
             // DataGrid for results
             dataGrid = new DataGrid
             {
                 AutoGenerateColumns = false,
                 CanUserAddRows = false,
+                IsReadOnly = true,
                 SelectionMode = DataGridSelectionMode.Single,
                 SelectionUnit = DataGridSelectionUnit.FullRow,
-                AllowDrop = true
+                AllowDrop = true,
+                // 启用虚拟化以提升大数据集性能
+                EnableRowVirtualization = true,
+                EnableColumnVirtualization = true,
+                // 优化渲染性能
+                MaxHeight = double.PositiveInfinity,
+                MaxWidth = double.PositiveInfinity
             };
-            dataGrid.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("OsuFiles.Value"));
+
+            // 设置虚拟化面板的滚动单位
+            VirtualizingPanel.SetScrollUnit(dataGrid, ScrollUnit.Pixel);
+            dataGrid.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("Value") { Source = _analysisViewModel.OsuFiles });
 
             LoadColumnOrder();
             dataGrid.ColumnReordered += OnColumnReordered;
 
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Title", Binding = new Binding("Title"), Width = 140 });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Artist", Binding = new Binding("Artist"), Width = 140 });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Diff", Binding = new Binding("Diff"), Width = 140 });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "BPM", Binding = new Binding("BPM"), Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "OD", Binding = new Binding("OD") { StringFormat = "F1" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "HP", Binding = new Binding("HP") { StringFormat = "F1" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Keys", Binding = new Binding("Keys"), Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Notes", Binding = new Binding("NotesCount"), Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "LN%", Binding = new Binding("LNPercent") { StringFormat = "F2" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Max KPS", Binding = new Binding("MaxKPS") { StringFormat = "F2" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Avg KPS", Binding = new Binding("AvgKPS") { StringFormat = "F2" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "XXY SR", Binding = new Binding("XxySR") { StringFormat = "F2" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "KRR LV", Binding = new Binding("KrrLV") { StringFormat = "F2" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "YLS LV", Binding = new Binding("YlsLV") { StringFormat = "F2" }, Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "Status", Binding = new Binding("Status"), Width = DataGridLength.Auto });
-            dataGrid.Columns.Add(new DataGridTextColumn { Header = "FileName", Binding = new Binding("FileName"), Width = DataGridLength.Auto });
-            
-            Grid.SetRow(dataGrid, 0);
-            root.Children.Add(dataGrid);
+            // 动态生成列
+            GenerateDataGridColumns();
 
+            // Buttons at the bottom
             var buttonGrid = new Grid { Margin = new Thickness(5) };
-            buttonGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            buttonGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            buttonGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            buttonGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            buttonGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             
             var loadBtn = SharedUIComponents.CreateStandardButton("Load Folder|加载文件夹");
-            loadBtn.Width = Double.NaN; loadBtn.Height = 40;
-            loadBtn.Click += LoadBtn_Click;
+            loadBtn.Width = Double.NaN; 
+            loadBtn.Height = 35;
+            loadBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            loadBtn.Margin = new Thickness(0, 0, 5, 0); // 右边距5px，与导出按钮间隔
+            loadBtn.SetBinding(ButtonBase.CommandProperty, new Binding(nameof(KRRLVAnalysisViewModel.BrowseCommand)));
 
-            var progressBar = new ProgressBar
-            {
-                Height = 20,
-                Width = Double.NaN,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 5, 0, 5),
-                Minimum = 0,
-                Maximum = 100
-            };
-            progressBar.SetBinding(RangeBase.ValueProperty, new Binding("ProgressValue.Value"));
-            progressBar.SetBinding(VisibilityProperty, new Binding("IsProgressVisible.Value")
-            {
-                Converter = new BooleanToVisibilityConverter()
-            });
+            var saveBtn = SharedUIComponents.CreateStandardButton("Export|导出");
+            saveBtn.Width = Double.NaN; 
+            saveBtn.Height = 35;
+            saveBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            saveBtn.SetBinding(ButtonBase.CommandProperty, new Binding(nameof(KRRLVAnalysisViewModel.SaveCommand)));
 
-            Grid.SetRow(progressBar, 0);
-            Grid.SetRow(loadBtn, 1);
-            buttonGrid.Children.Add(progressBar);
+            // 测试按钮 - 临时添加用于调试进度条
+            // var testBtn = SharedUIComponents.CreateStandardButton("Test Progress|测试进度");
+            // testBtn.Width = Double.NaN; 
+            // testBtn.Height = 35;
+            // testBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            // testBtn.Click += TestBtn_Click;
+            // Grid.SetColumn(testBtn, 1);
+            // buttonGrid.Children.Add(testBtn);
+            
+            
+            Grid.SetRow(dataGrid, 0);
+            Grid.SetRow(buttonGrid, 1);
+            Grid.SetColumn(loadBtn, 0);
+            Grid.SetColumn(saveBtn, 2);
+
             buttonGrid.Children.Add(loadBtn);
 
-            Grid.SetRow(buttonGrid, 1);
+            buttonGrid.Children.Add(saveBtn);
+
+            root.Children.Add(dataGrid);
             root.Children.Add(buttonGrid);
 
             Content = root;
 
             Drop += Window_Drop;
             DragEnter += Window_DragEnter;
+            DragOver += Window_DragOver;
+        }
+
+        private void GenerateDataGridColumns()
+        {
+            if (dataGrid == null) return;
+
+            // 使用共享的列配置
+            foreach (var config in KRRLVAnalysisColumnConfig.Columns)
+            {
+                // 所有属性现在都是KRRLVAnalysisItem的直接属性
+                var binding = new Binding(config.Property);
+                if (!string.IsNullOrEmpty(config.Format))
+                {
+                    binding.StringFormat = config.Format;
+                }
+
+                var column = new DataGridTextColumn
+                {
+                    Header = config.Header,
+                    Binding = binding,
+                    Width = double.IsNaN(config.Width) ? DataGridLength.Auto : new DataGridLength(config.Width)
+                };
+
+                dataGrid.Columns.Add(column);
+            }
         }
 
         private void Window_Drop(object sender, DragEventArgs e)
@@ -130,20 +211,11 @@ namespace krrTools.Tools.KRRLVAnalysis
                 DragDropEffects.Copy : DragDropEffects.None;
         }
 
-        private void LoadBtn_Click(object sender, RoutedEventArgs e)
+        private void Window_DragOver(object sender, DragEventArgs e)
         {
-            var owner = Window.GetWindow(this);
-            var selected = FilesHelper.ShowFolderBrowserDialog("选择文件夹", owner);
-            if (!string.IsNullOrEmpty(selected))
-            {
-                _analysisViewModel.PathInput.Value = selected;
-                _analysisViewModel.ProcessDroppedFiles([selected]);
-            }
-        }
-
-        private void OnLanguageChanged()
-        {
-            // Update UI strings if needed
+            e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ?
+                DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
         }
 
         private void LoadColumnOrder()

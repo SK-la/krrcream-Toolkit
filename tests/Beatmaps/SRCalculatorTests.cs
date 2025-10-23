@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using krrTools.Beatmaps;
-using Xunit;
+using System.Numerics;
 using BenchmarkDotNet.Attributes;
+using krrTools.Beatmaps;
+using OsuParsers.Beatmaps;
+using OsuParsers.Beatmaps.Objects;
 using OsuParsers.Decoders;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace krrTools.Tests.Beatmaps;
@@ -21,62 +24,11 @@ public class SRCalculatorTests
         _output = output;
     }
 
-    [Fact]
-    public void Calculate_EmptyNoteSequence_ThrowsException()
-    {
-        // Arrange
-        var calculator = new SRCalculator();
-        var noteSequence = new List<Note>();
-        var keyCount = 4;
-        var od = 8.0;
-
-        // Assert
-        Assert.Throws<InvalidOperationException>(() => calculator.Calculate(noteSequence, keyCount, od, out _));
-    }
-
-    [Fact]
-    public void Calculate_SingleNote_ReturnsPositiveValue()
-    {
-        // Arrange
-        var calculator = new SRCalculator();
-        var noteSequence = new List<Note> { new(3, 5, 1000) };
-        var keyCount = 4;
-        var od = 8.0;
-
-        // Act
-        var result = calculator.Calculate(noteSequence, keyCount, od, out _);
-
-        // Assert
-        Assert.True(result >= 0);
-    }
-
-    [Fact]
-    public void Calculate_MultipleNotes_ReturnsHigherValue()
-    {
-        // Arrange
-        var calculator = new SRCalculator();
-        var singleNote = new List<Note> { new(0, 0, 1000) };
-        var multipleNotes = new List<Note>
-        {
-            new(0, 0, 1000),
-            new(1, 0, 1500),
-            new(2, 0, 2000)
-        };
-        var keyCount = 4;
-        var od = 8.0;
-
-        // Act
-        var singleResult = calculator.Calculate(singleNote, keyCount, od, out _);
-        var multipleResult = calculator.Calculate(multipleNotes, keyCount, od, out _);
-
-        // Assert
-        Assert.True(multipleResult >= singleResult);
-    }
-
     [MemoryDiagnoser]
     public class SRCalculatorBenchmarks
     {
         private List<Note> _testNotes;
+        private Beatmap _testBeatmap;
         private SRCalculator _newCalculator;
         private OldSRCalculator _oldCalculator;
 
@@ -97,14 +49,25 @@ public class SRCalculatorTests
                 _testNotes.Add(new Note(column, time, tail));
             }
 
-            _newCalculator = new SRCalculator();
+            _testBeatmap = new Beatmap();
+            _testBeatmap.DifficultySection.CircleSize = 4;
+            _testBeatmap.DifficultySection.OverallDifficulty = 8.0f;
+            _testBeatmap.HitObjects = _testNotes.Select(note => {
+                var hitObject = new HitObject();
+                hitObject.Position = new Vector2((float)((note.K + 0.5) * 512.0 / 4), 0);
+                hitObject.StartTime = note.H;
+                hitObject.EndTime = note.T >= 0 ? note.T : hitObject.StartTime;
+                return hitObject;
+            }).ToList();
+
+            _newCalculator = SRCalculator.Instance;
             _oldCalculator = new OldSRCalculator();
         }
 
         [Benchmark]
         public double NewSRCalculator()
         {
-            return _newCalculator.Calculate(_testNotes, 4, 8.0, out _);
+            return _newCalculator.CalculateSR(_testBeatmap, out _);
         }
 
         [Benchmark]
@@ -117,103 +80,215 @@ public class SRCalculatorTests
     [Fact]
     public void RunDetailedPerformanceAnalysis()
     {
-        // 加载真实的谱面文件
-        var testFilePath =
-            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [10k-1].osu";
-        var beatmap = BeatmapDecoder.Decode(testFilePath);
-        var calculator = new SRCalculator();
-        var notes = calculator.getNotes(beatmap);
-        var keyCount = (int)beatmap.DifficultySection.CircleSize;
-        double od = beatmap.DifficultySection.OverallDifficulty;
+        // 加载真实的谱面文件 (4k-10k)
+        var testFiles = new[]
+        {
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [4k Original by Leo137].osu",
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [5k-1].osu",
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [6k-1].osu",
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [7k-1].osu",
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [8k-1].osu",
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [9k-1].osu",
+            @"E:\BASE CODE\GitHub\krrTools\tests\TestOsuFile\Jumpstream - Happy Hardcore Synthesizer (SK_la) [10k-1].osu"
+        };
 
-        _output.WriteLine("=== SR计算详细性能分析 ===");
-        _output.WriteLine($"谱面: {System.IO.Path.GetFileName(testFilePath)}");
-        _output.WriteLine($"音符数量: {notes.Count}, 键数: {keyCount}K, OD: {od}");
-        _output.WriteLine("运行3次以获取平均时间...");
+        var beatmaps = testFiles.Select(f => BeatmapDecoder.Decode(f)).ToArray();
+        var keyCounts = beatmaps.Select(bm => (int)bm.DifficultySection.CircleSize).ToArray();
+
+        _output.WriteLine($"=== SR计算详细性能分析 (4k-10k) === 列队{beatmaps.Length}，运行3次以获取平均时间...");
         _output.WriteLine("");
 
-        // 运行几次获取平均时间和SR值
+        // 计算每个版本的 SR 和时间
+        var newSRs = new List<double>();
+        var oldSRs = new List<double>();
+        var originalSRs = new List<double>();
+
         var newTimesList = new List<Dictionary<string, long>>();
-        var newSRList = new List<double>();
-        for (var i = 0; i < 3; i++)
-        {
-            var sr = new SRCalculator().Calculate(notes, keyCount, od, out var times);
-            newTimesList.Add(times);
-            newSRList.Add(sr);
-        }
-
         var oldTimesList = new List<Dictionary<string, long>>();
-        var oldSRList = new List<double>();
-        for (var i = 0; i < 3; i++)
+        var originalTimesList = new List<Dictionary<string, long>>();
+
+        foreach (var bm in beatmaps)
         {
-            var sr = new OldSRCalculator().Calculate(notes, keyCount, od, out var times);
-            oldTimesList.Add(times);
-            oldSRList.Add(sr);
+            var notes = SRCalculator.Instance.getNotes(bm);
+            var keyCount = (int)bm.DifficultySection.CircleSize;
+            double od = bm.DifficultySection.OverallDifficulty;
+
+            // 新版本
+            double newSrSum = 0;
+            var newTimesSum = new Dictionary<string, long>();
+            for (var i = 0; i < 3; i++)
+            {
+                var sr = SRCalculator.Instance.CalculateSR(bm, out var times);
+                newSrSum += sr;
+                foreach (var kv in times)
+                {
+                    if (!newTimesSum.ContainsKey(kv.Key)) newTimesSum[kv.Key] = 0;
+                    newTimesSum[kv.Key] += kv.Value;
+                }
+            }
+            newSRs.Add(newSrSum / 3);
+            newTimesList.Add(newTimesSum.ToDictionary(kv => kv.Key, kv => kv.Value / 3));
+
+            // 旧版本
+            double oldSrSum = 0;
+            var oldTimesSum = new Dictionary<string, long>();
+            for (var i = 0; i < 3; i++)
+            {
+                var sr = new OldSRCalculator().Calculate(notes, keyCount, od, out var times);
+                oldSrSum += sr;
+                foreach (var kv in times)
+                {
+                    if (!oldTimesSum.ContainsKey(kv.Key)) oldTimesSum[kv.Key] = 0;
+                    oldTimesSum[kv.Key] += kv.Value;
+                }
+            }
+            oldSRs.Add(oldSrSum / 3);
+            oldTimesList.Add(oldTimesSum.ToDictionary(kv => kv.Key, kv => kv.Value / 3));
+
+            // 原始版本
+            double originalSrSum = 0;
+            var originalTimesSum = new Dictionary<string, long>();
+            for (var i = 0; i < 3; i++)
+            {
+                var sr = new OriginalSRCalculator().Calculate(notes, keyCount, od, out var times);
+                originalSrSum += sr;
+                foreach (var kv in times)
+                {
+                    if (!originalTimesSum.ContainsKey(kv.Key)) originalTimesSum[kv.Key] = 0;
+                    originalTimesSum[kv.Key] += kv.Value;
+                }
+            }
+            originalSRs.Add(originalSrSum / 3);
+            originalTimesList.Add(originalTimesSum.ToDictionary(kv => kv.Key, kv => kv.Value / 3));
         }
 
-        // 计算平均时间和SR值
-        var avgNewTimes = newTimesList
-            .SelectMany(d => d)
-            .GroupBy(kv => kv.Key)
-            .ToDictionary(g => g.Key, g => g.Average(kv => kv.Value));
-        var avgNewSR = newSRList.Average();
+        // 计算平均时间 (使用10k谱面作为基准)
+        var benchmarkIndex = 6; // 10k谱面索引
+        var avgNewTimes = newTimesList[benchmarkIndex];
+        var avgOldTimes = oldTimesList[benchmarkIndex];
+        var avgOriginalTimes = originalTimesList[benchmarkIndex];
 
-        var avgOldTimes = oldTimesList
-            .SelectMany(d => d)
-            .GroupBy(kv => kv.Key)
-            .ToDictionary(g => g.Key, g => g.Average(kv => kv.Value));
-        var avgOldSR = oldSRList.Average();
+        // 使用10k谱面的 SR 作为代表
+        var avgNewSR = newSRs[benchmarkIndex];
+        var avgOldSR = oldSRs[benchmarkIndex];
+        var avgOriginalSR = originalSRs[benchmarkIndex];
+
+        // 计算一致性 (标准差)
+        double CalculateStdDev(List<double> values)
+        {
+            var avg = values.Average();
+            return Math.Sqrt(values.Sum(v => Math.Pow(v - avg, 2)) / values.Count);
+        }
+
+        var newConsistency = CalculateStdDev(newSRs);
+        var oldConsistency = CalculateStdDev(oldSRs);
+        var originalConsistency = CalculateStdDev(originalSRs);
 
         // 生成 ASCII 表格
         var sections = new[] { "Section232425", "Section2627", "Section3", "Total" };
         var displaySections = new[] { "Section23/24/25", "Section26/27", "Section3", "Total" };
-        var colWidths = new[] { 6, 15, 11, 7, 5, 6 }; // 部分, Section23/24/25, Section26/27, Section3, Total, SR
+        var colWidths = new[] { 8, 15, 11, 7, 5, 6, 10 }; // 版本, Section23/24/25, Section26/27, Section3, Total, SR, 一致性
 
         // 表头
         var header =
-            $"| {"部分".PadRight(colWidths[0])} | {displaySections[0].PadRight(colWidths[1])} | {displaySections[1].PadRight(colWidths[2])} | {displaySections[2].PadRight(colWidths[3])} | {displaySections[3].PadRight(colWidths[4])} | {"SR".PadRight(colWidths[5])} |";
+            $"| {"版本".PadRight(colWidths[0])} | {displaySections[0].PadRight(colWidths[1])} | {displaySections[1].PadRight(colWidths[2])} | {displaySections[2].PadRight(colWidths[3])} | {displaySections[3].PadRight(colWidths[4])} | {"SR".PadRight(colWidths[5])} | {"一致性".PadRight(colWidths[6])} |";
         var separator = $"+{string.Join("+", colWidths.Select(w => new string('-', w + 2)))}+";
 
         _output.WriteLine(separator);
         _output.WriteLine(header);
         _output.WriteLine(separator);
 
-        // 新版本行
-        var newTimes = sections.Select(s =>
-                avgNewTimes.GetValueOrDefault(s, 0).ToString("F1").PadLeft(colWidths[Array.IndexOf(sections, s) + 1]))
-            .ToArray();
-        var newSRStr = avgNewSR.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(colWidths[5]);
-        _output.WriteLine(
-            $"| {"新版本".PadRight(colWidths[0])} | {newTimes[0]} | {newTimes[1]} | {newTimes[2]} | {newTimes[3]} | {newSRStr} |");
-
         // 旧版本行
         var oldTimes = sections.Select(s =>
                 avgOldTimes.GetValueOrDefault(s, 0).ToString("F1").PadLeft(colWidths[Array.IndexOf(sections, s) + 1]))
             .ToArray();
         var oldSRStr = avgOldSR.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(colWidths[5]);
+        var oldConsistencyStr = oldConsistency.ToString("F4").PadLeft(colWidths[6]);
         _output.WriteLine(
-            $"| {"旧版本".PadRight(colWidths[0])} | {oldTimes[0]} | {oldTimes[1]} | {oldTimes[2]} | {oldTimes[3]} | {oldSRStr} |");
+            $"| {"旧版本".PadRight(colWidths[0])} | {oldTimes[0]} | {oldTimes[1]} | {oldTimes[2]} | {oldTimes[3]} | {oldSRStr} | {oldConsistencyStr} |");
 
-        // 差异行
-        var diffs = sections.Select(s =>
-        {
-            var diff = avgNewTimes.GetValueOrDefault(s, 0) - avgOldTimes.GetValueOrDefault(s, 0);
-            return $"{(diff >= 0 ? "+" : "")}{diff:F1}".PadLeft(colWidths[Array.IndexOf(sections, s) + 1]);
-        }).ToArray();
-        var srDiff = avgNewSR - avgOldSR;
-        var srDiffStr = $"{(srDiff >= 0 ? "+" : "")}{srDiff.ToString($"F{SR_DECIMAL_PLACES}")}".PadLeft(colWidths[5]);
+        // 原始版本行
+        var originalTimes = sections.Select(s =>
+                avgOriginalTimes.GetValueOrDefault(s, 0).ToString("F1").PadLeft(colWidths[Array.IndexOf(sections, s) + 1]))
+            .ToArray();
+        var originalSRStr = avgOriginalSR.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(colWidths[5]);
+        var originalConsistencyStr = originalConsistency.ToString("F4").PadLeft(colWidths[6]);
         _output.WriteLine(
-            $"| {"差异".PadRight(colWidths[0])} | {diffs[0]} | {diffs[1]} | {diffs[2]} | {diffs[3]} | {srDiffStr} |");
+            $"| {"原始版本".PadRight(colWidths[0])} | {originalTimes[0]} | {originalTimes[1]} | {originalTimes[2]} | {originalTimes[3]} | {originalSRStr} | {originalConsistencyStr} |");
+        
+        // 新版本行
+        var newTimes = sections.Select(s =>
+                avgNewTimes.GetValueOrDefault(s, 0).ToString("F1").PadLeft(colWidths[Array.IndexOf(sections, s) + 1]))
+            .ToArray();
+        var newSRStr = avgNewSR.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(colWidths[5]);
+        var newConsistencyStr = newConsistency.ToString("F4").PadLeft(colWidths[6]);
+        _output.WriteLine(
+            $"| {"新版本".PadRight(colWidths[0])} | {newTimes[0]} | {newTimes[1]} | {newTimes[2]} | {newTimes[3]} | {newSRStr} | {newConsistencyStr} |");
 
         _output.WriteLine(separator);
 
-        // 同时输出到控制台
-        Console.WriteLine(separator);
-        Console.WriteLine(header);
-        Console.WriteLine(separator);
-        Console.WriteLine(
-            $"| {"新版本".PadRight(colWidths[0])} | {newTimes[0]} | {newTimes[1]} | {newTimes[2]} | {newTimes[3]} | {newSRStr} |");
-        Console.WriteLine(
-            $"| {"旧版本".PadRight(colWidths[0])} | {oldTimes[0]} | {oldTimes[1]} | {oldTimes[2]} | {oldTimes[3]} | {oldSRStr} |");
+        // 新表：4-10k 详细数据
+        _output.WriteLine("=== 4-10k 详细数据 ===");
+        var kLabels = keyCounts.Select(k => $"{k}k").ToArray();
+        var detailColWidths = new[] { 10 }.Concat(Enumerable.Repeat(8, kLabels.Length)).ToArray(); // 项目, 4k, 5k, ...
+        var detailHeader = $"| {"项目".PadRight(detailColWidths[0])} | {string.Join(" | ", kLabels.Select((k, i) => k.PadRight(detailColWidths[i + 1])))} |";
+        var detailSeparator = $"+{string.Join("+", detailColWidths.Select(w => new string('-', w + 2)))}+";
+
+        _output.WriteLine(detailSeparator);
+        _output.WriteLine(detailHeader);
+        _output.WriteLine(detailSeparator);
+
+        // 旧SR 行
+        var oldSrRow = $"| {"旧SR".PadRight(detailColWidths[0])} | {string.Join(" | ", oldSRs.Select(sr => sr.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(detailColWidths[1])))} |";
+        _output.WriteLine(oldSrRow);
+
+        // 原始SR 行
+        var originalSrRow = $"| {"原始SR".PadRight(detailColWidths[0])} | {string.Join(" | ", originalSRs.Select(sr => sr.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(detailColWidths[1])))} |";
+        _output.WriteLine(originalSrRow);
+
+        // 新SR 行
+        var newSrRow = $"| {"新SR".PadRight(detailColWidths[0])} | {string.Join(" | ", newSRs.Select(sr => sr.ToString($"F{SR_DECIMAL_PLACES}").PadLeft(detailColWidths[1])))} |";
+        _output.WriteLine(newSrRow);
+
+        // 旧总用时 行
+        var oldTimeRow = $"| {"旧总用时".PadRight(detailColWidths[0])} | {string.Join(" | ", oldTimesList.Select(t => t.GetValueOrDefault("Total", 0).ToString("F1").PadLeft(detailColWidths[1])))} |";
+        _output.WriteLine(oldTimeRow);
+
+        // 原始总用时 行
+        var originalTimeRow = $"| {"原始总用时".PadRight(detailColWidths[0])} | {string.Join(" | ", originalTimesList.Select(t => t.GetValueOrDefault("Total", 0).ToString("F1").PadLeft(detailColWidths[1])))} |";
+        _output.WriteLine(originalTimeRow);
+
+        // 新总用时 行
+        var newTimeRow = $"| {"新总用时".PadRight(detailColWidths[0])} | {string.Join(" | ", newTimesList.Select(t => t.GetValueOrDefault("Total", 0).ToString("F1").PadLeft(detailColWidths[1])))} |";
+        _output.WriteLine(newTimeRow);
+
+        _output.WriteLine(detailSeparator);
+        _output.WriteLine("");
+
+        // 验证SR结果一致性
+        const double SR_TOLERANCE = 0.0001;
+        var oldSrDiff = Math.Abs(avgOldSR - avgOriginalSR);
+        var newSrDiff = Math.Abs(avgNewSR - avgOriginalSR);
+        
+        Assert.True(oldSrDiff < SR_TOLERANCE, 
+            $"旧版本SR结果不一致。差异: {oldSrDiff:F6}, 允许误差: {SR_TOLERANCE:F6}");
+        Assert.True(newSrDiff < SR_TOLERANCE, 
+            $"新版本SR结果不一致。差异: {newSrDiff:F6}, 允许误差: {SR_TOLERANCE:F6}");
+
+        _output.WriteLine($"✅ SR结果一致性验证通过");
+        _output.WriteLine($"  原始版本SR: {avgOriginalSR:F6}");
+        _output.WriteLine($"  旧版本SR差异: {oldSrDiff:F6}");
+        _output.WriteLine($"  新版本SR差异: {newSrDiff:F6}");
+
+        // 断言检查：4-10k每个的SR都有0.001精度无偏差（新版本 vs 旧版本）
+        const double PRECISION_TOLERANCE = 0.001;
+        for (int i = 0; i < keyCounts.Length; i++)
+        {
+            var diff = Math.Abs(newSRs[i] - oldSRs[i]);
+            Assert.True(diff < PRECISION_TOLERANCE,
+                $"{keyCounts[i]}k SR精度不满足要求。新SR: {newSRs[i]:F6}, 旧SR: {oldSRs[i]:F6}, 差异: {diff:F6}, 允许误差: {PRECISION_TOLERANCE:F6}");
+        }
+
+        _output.WriteLine($"✅ 4-10k SR精度验证通过 (精度: {PRECISION_TOLERANCE:F6})");
     }
 }

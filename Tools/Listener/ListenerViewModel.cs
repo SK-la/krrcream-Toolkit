@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using System.Collections.ObjectModel;
 using System.Windows.Forms;
 using CommunityToolkit.Mvvm.Input;
 using krrTools.Beatmaps;
@@ -31,9 +26,9 @@ public class ListenerViewModel : ReactiveViewModelBase
     [Inject] private IEventBus EventBus { get; set; } = null!;
     [Inject] private StateBarManager StateBarManager { get; set; } = null!;
 
-    // 服务实例
-    private readonly OsuMonitorService _monitorService;
-    private readonly BeatmapAnalysisService _analysisService;
+    // 服务实例 - 通过依赖注入获取
+    [Inject] private OsuMonitorService _monitorService { get; set; } = null!;
+    [Inject] private BeatmapAnalysisService _analysisService { get; set; } = null!; //分析服务自订阅监听变更
 
     // 全局设置引用
     public GlobalSettings GlobalSettings { get; }
@@ -83,14 +78,14 @@ public class ListenerViewModel : ReactiveViewModelBase
     public Bindable<double> BPM { get; set; } = new();
     public Bindable<double> OD { get; set; } = new();
     public Bindable<double> HP { get; set; } = new();
-    public Bindable<int> Keys { get; set; } = new();
-    public Bindable<int> NotesCount { get; set; } = new();
+    public Bindable<double> Keys { get; set; } = new();
+    public Bindable<double> NotesCount { get; set; } = new();
     public Bindable<double> LNPercent { get; set; } = new();
     public Bindable<string> Status { get; set; } = new("Monitoring...");
     // LV 分析相关属性
     public Bindable<double> XxySR { get; set; } = new();
-    public Bindable<double> KrrLV { get; set; } = new();
-    public Bindable<double> YlsLV { get; set; } = new();
+    public Bindable<double> KrrLV { get; set; } = new(-1.0);
+    public Bindable<double> YlsLV { get; set; } = new(-1.0);
     public Bindable<double> MaxKPS { get; set; } = new();
     public Bindable<double> AvgKPS { get; set; } = new();
 
@@ -110,10 +105,6 @@ public class ListenerViewModel : ReactiveViewModelBase
 
     public ListenerViewModel()
     {
-        // 初始化服务
-        _monitorService = new OsuMonitorService();
-        _analysisService = new BeatmapAnalysisService();
-
         // 获取全局设置引用
         GlobalSettings = BaseOptionsManager.GetGlobalSettings();
 
@@ -123,13 +114,11 @@ public class ListenerViewModel : ReactiveViewModelBase
         EventBus.Subscribe<AnalysisResultChangedEvent>(OnAnalysisResultChanged);
 
         // 订阅监听器状态变化
-        StateBarManager.ListenerState.OnValueChanged(OnListenerStateChanged);
+        StateBarManager.ListenerStateBindable.OnValueChanged(OnListenerStateChanged);
 
         // 设置 Bindable 属性变化通知
         SetupAutoBindableNotifications();
     }
-
-
 
     private void OnListenerStateChanged(ListenerState state)
     {
@@ -152,16 +141,16 @@ public class ListenerViewModel : ReactiveViewModelBase
         }
     }
 
-    public Task StartMonitoringAsync()
+    private void StartMonitoringAsync()
     {
-        if (_isMonitoringActive) return Task.CompletedTask;
+        // if (_isMonitoringActive) return Task.CompletedTask;
 
         _isMonitoringActive = true;
         _currentDelayMs = 500; // 重置延迟
         _monitoringCancellation = new CancellationTokenSource();
         _monitoringTask = Task.Run(async () =>
         {
-            Console.WriteLine("[ListenerViewModel] Monitoring task started");
+            Logger.WriteLine(LogLevel.Information, "[ListenerViewModel] Monitoring task started");
             while (!_monitoringCancellation.Token.IsCancellationRequested)
             {
                 var detected = CheckOsuBeatmap();
@@ -172,10 +161,10 @@ public class ListenerViewModel : ReactiveViewModelBase
                 await Task.Delay(_currentDelayMs, _monitoringCancellation.Token); // 动态间隔，可取消
             }
 
-            Console.WriteLine("[ListenerViewModel] Monitoring task ended");
+            Logger.WriteLine(LogLevel.Information, "[ListenerViewModel] Monitoring task ended");
         });
 
-        return Task.CompletedTask;
+        // return Task.CompletedTask;
     }
 
     private bool CheckOsuBeatmap()
@@ -186,7 +175,7 @@ public class ListenerViewModel : ReactiveViewModelBase
             _monitorService.DetectOsuProcess();
 
             var monitorFilePath = _monitorService.ReadMemoryData();
-            var isMania = BeatmapAnalyzer.IsManiaBeatmap(monitorFilePath);
+            var isMania = BeatmapFileHelper.IsManiaBeatmap(monitorFilePath);
 
             if (!isMania)
             {
@@ -205,7 +194,6 @@ public class ListenerViewModel : ReactiveViewModelBase
                 EventBus.Publish(new BeatmapChangedEvent
                 {
                     FilePath = monitorFilePath,
-                    FileName = Path.GetFileName(monitorFilePath),
                     ChangeType = BeatmapChangeType.FromMonitoring
                 });
 
@@ -241,7 +229,7 @@ public class ListenerViewModel : ReactiveViewModelBase
         }
     }
 
-    public void StopMonitoring()
+    private void StopMonitoring()
     {
         _monitoringCancellation?.Cancel();
         try
@@ -251,11 +239,11 @@ public class ListenerViewModel : ReactiveViewModelBase
         catch (AggregateException ex) when (ex.InnerException is TaskCanceledException)
         {
             // 忽略任务取消异常
-            Console.WriteLine("[ListenerViewModel] StopMonitoring: Task was canceled, ignoring.");
+            Logger.WriteLine(LogLevel.Information, "[ListenerViewModel] StopMonitoring: Task was canceled, ignoring.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ListenerViewModel] StopMonitoring error: {ex.Message}");
+            Logger.WriteLine(LogLevel.Error, "[ListenerViewModel] StopMonitoring error: {0}", ex.Message);
         }
 
         _monitoringCancellation?.Dispose();
@@ -269,31 +257,35 @@ public class ListenerViewModel : ReactiveViewModelBase
     /// </summary>
     private void OnAnalysisResultChanged(AnalysisResultChangedEvent analysisEvent)
     {
-        var result = analysisEvent.AnalysisResult;
+        var basicResult = analysisEvent.AnalysisBasic;
+        var perfResult = analysisEvent.AnalysisPerformance;
 
         Application.Current?.Dispatcher?.Invoke(() =>
         {
-            Title.Value = result.Title ?? string.Empty;
-            Artist.Value = result.Artist ?? string.Empty;
-            Creator.Value = result.Creator ?? string.Empty;
-            Version.Value = result.Diff ?? string.Empty;
-            Keys.Value = (int)result.Keys;
-            OD.Value = result.OD;
-            HP.Value = result.HP;
-            NotesCount.Value = result.NotesCount;
-            LNPercent.Value = result.LNPercent;
-            XxySR.Value = result.XXY_SR;
-            KrrLV.Value = result.KRR_LV;
-            YlsLV.Value = OsuAnalyzer.CalculateYlsLevel(result.XXY_SR);
-            MaxKPS.Value = result.MaxKPS;
-            AvgKPS.Value = result.AvgKPS;
+            Title.Value = basicResult.Title;
+            Artist.Value = basicResult.Artist;
+            Creator.Value = basicResult.Creator;
+            Version.Value = basicResult.Diff;
+            OD.Value = basicResult.OD;
+            HP.Value = basicResult.HP;
+            NotesCount.Value = basicResult.NotesCount;
+            
+            Keys.Value = basicResult.KeyCount;
+            MaxKPS.Value = basicResult.MaxKPS;
+            AvgKPS.Value = basicResult.AvgKPS;
+            LNPercent.Value = basicResult.LN_Percent;
+            XxySR.Value = perfResult?.XXY_SR ?? 0;
+            KrrLV.Value = perfResult?.KRR_LV ?? 0;
+            YlsLV.Value = perfResult?.YLs_LV ?? 0;
+
+            
             Status.Value = "Analyzed";
 
             // 解析BPM显示字符串
-            if (!string.IsNullOrEmpty(result.BPMDisplay))
+            if (!string.IsNullOrEmpty(basicResult.BPMDisplay))
             {
                 // BPM格式通常是 "180(170-190)"
-                var bpmParts = result.BPMDisplay.Split('(');
+                var bpmParts = basicResult.BPMDisplay.Split('(');
                 if (double.TryParse(bpmParts[0], out var bpm)) BPM.Value = bpm;
             }
 

@@ -12,14 +12,15 @@ namespace krrTools.Tools.N2NC;
 public enum KeySelectionFlags
 {
     None = 0,
-    K4 = 1 << 0,
-    K5 = 1 << 1,
-    K6 = 1 << 2,
-    K7 = 1 << 3,
-    K8 = 1 << 4,
-    K9 = 1 << 5,
-    K10 = 1 << 6,
-    K10Plus = 1 << 7
+    K3Minus = 1 << 0,
+    K4 = 1 << 1,
+    K5 = 1 << 2,
+    K6 = 1 << 3,
+    K7 = 1 << 4,
+    K8 = 1 << 5,
+    K9 = 1 << 6,
+    K10 = 1 << 7,
+    K10Plus = 1 << 8
 }
 
 /// <summary>
@@ -35,29 +36,18 @@ public class N2NCViewModel : ToolViewModelBase<N2NCOptions>, IPreviewOptionsProv
 
     public static readonly Dictionary<double, string> TransformSpeedSlotDict = new()
     {
-        { 1, "1/16" },
-        { 2, "1/8" },
-        { 3, "1/4" },
-        { 4, "1/2" },
-        { 5, "1" },
-        { 6, "2" },
+        { 0, "1/8" },
+        { 1, "1/4" },
+        { 2, "1/2" },
+        { 3, "3/4" },
+        { 4, "1" },
+        { 5, "2" },
+        { 6, "3" },
         { 7, "4" },
-        { 8, "8" }
+        { 8, "∞" }
     };
 
-    // 实际值映射 - 滑条值转换为实际速度值
-    private static readonly Dictionary<double, double> TransformSpeedActualDict = new()
-    {
-        { 1, 0.0625 },
-        { 2, 0.125 },
-        { 3, 0.25 },
-        { 4, 0.5 },
-        { 5, 1.0 },
-        { 6, 2.0 },
-        { 7, 4.0 },
-        { 8, 8.0 }
-    };
-
+ 
     private bool _isUpdatingOptions;
 
     public N2NCViewModel(N2NCOptions options) : base(ConverterEnum.N2NC, true, options)
@@ -119,7 +109,7 @@ public class N2NCViewModel : ToolViewModelBase<N2NCOptions>, IPreviewOptionsProv
                     OnPropertyChanged(nameof(MinKeysMaximum)); // 通知计算属性更新
                     break;
                 case nameof(Options.TransformSpeed):
-                    OnPropertyChanged(nameof(TransformSpeedDisplay));
+                    OnPropertyChanged(nameof(TransformSpeedSlotDict));
                     OnPropertyChanged(nameof(TransformSpeedSlot));
                     break;
             }
@@ -141,8 +131,31 @@ public class N2NCViewModel : ToolViewModelBase<N2NCOptions>, IPreviewOptionsProv
         Strings.N2NCMinKeysTemplate.GetLocalizedString().PropertyChanged += _minKeysDisplayHandler;
     }
 
-    public KeySelectionFlags KeySelection { get; set; } = KeySelectionFlags.None;
+    public KeySelectionFlags KeySelection 
+    { 
+        get => _keySelection;
+        set
+        {
+            if (_keySelection != value)
+            {
+                _keySelection = value;
+                Options.SelectedKeyFlags = value;  // 同步更新到 Options
+                OnPropertyChanged();
+            }
+        }
+    }
 
+    public bool Is3KMinusSelected
+    {
+        get => (_keySelection & KeySelectionFlags.K3Minus) == KeySelectionFlags.K3Minus;
+        set
+        {
+            if (value) KeySelection |= KeySelectionFlags.K3Minus;
+            else KeySelection &= ~KeySelectionFlags.K3Minus;
+            OnPropertyChanged();
+        }
+    }
+    
     public bool Is4KSelected
     {
         get => (_keySelection & KeySelectionFlags.K4) == KeySelectionFlags.K4;
@@ -238,21 +251,6 @@ public class N2NCViewModel : ToolViewModelBase<N2NCOptions>, IPreviewOptionsProv
     }
 
     // 获取选中的键数列表 - now derived from KeySelection flags
-    private List<int> GetSelectedKeyTypes()
-    {
-        var selectedKeys = new List<int>();
-
-        if (Is4KSelected) selectedKeys.Add(4);
-        if (Is5KSelected) selectedKeys.Add(5);
-        if (Is6KSelected) selectedKeys.Add(6);
-        if (Is7KSelected) selectedKeys.Add(7);
-        if (Is8KSelected) selectedKeys.Add(8);
-        if (Is9KSelected) selectedKeys.Add(9);
-        if (Is10KSelected) selectedKeys.Add(10);
-        if (Is10KPlusSelected) selectedKeys.Add(11); // 10K+用11表示
-
-        return selectedKeys;
-    }
 
     /// <summary>
     /// 目标键数 - 响应式属性，自动触发约束和事件
@@ -307,8 +305,6 @@ public class N2NCViewModel : ToolViewModelBase<N2NCOptions>, IPreviewOptionsProv
             if (Math.Abs(_transformSpeedSlot - value) > TOLERANCE)
             {
                 _transformSpeedSlot = value;
-                // 自动映射到实际速度值
-                if (TransformSpeedActualDict.TryGetValue(value, out var actualSpeed)) TransformSpeed = actualSpeed;
                 OnPropertyChanged();
             }
         }
@@ -316,32 +312,13 @@ public class N2NCViewModel : ToolViewModelBase<N2NCOptions>, IPreviewOptionsProv
 
     private double _transformSpeedSlot = 5.0; // 默认为档位5 (速度1.0)
 
-    public string TransformSpeedDisplay
-    {
-        get
-        {
-            // 根据当前速度值显示对应的节拍标签
-            var v = Options.TransformSpeed.Value;
-            if (Math.Abs(v - 0.0625) < 1e-8) return "1/16";
-            if (Math.Abs(v - 0.125) < 1e-8) return "1/8";
-            if (Math.Abs(v - 0.25) < 1e-8) return "1/4";
-            if (Math.Abs(v - 0.5) < 1e-8) return "1/2";
-            if (Math.Abs(v - 1.0) < 1e-8) return "1";
-            if (Math.Abs(v - 2.0) < 1e-8) return "2";
-            if (Math.Abs(v - 4.0) < 1e-8) return "4";
-            if (Math.Abs(v - 8.0) < 1e-8) return "8";
-            return v.ToString("G");
-        }
-    }
+
 
 
     public N2NCOptions GetConversionOptions()
     {
-        var selectedKeys = GetSelectedKeyTypes();
-
         var options = new N2NCOptions
         {
-            SelectedKeyTypes = selectedKeys,
             Seed = Options.Seed,
             SelectedKeyFlags = KeySelection,
             SelectedPreset = Options.SelectedPreset

@@ -1,8 +1,11 @@
 #nullable enable
-using krrTools.Tools.Listener;
-using krrTools.Bindable;
-using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
+using krrTools.Beatmaps;
+using krrTools.Bindable;
+using krrTools.Configuration;
+using krrTools.Tools.Listener;
+using krrTools.Utilities;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace krrTools.Tests.交互检查;
@@ -14,11 +17,25 @@ public class ListenerViewModelTests
         // Setup dependency injection for tests using reflection
         var services = new ServiceCollection();
         services.AddSingleton<IEventBus, EventBus>();
+        services.AddSingleton<StateBarManager>();
+        services.AddSingleton<OsuMonitorService>();
+        services.AddSingleton<BeatmapAnalysisService>();
         var serviceProvider = services.BuildServiceProvider();
         
         // Use reflection to set the private Services property
         var servicesProperty = typeof(App).GetProperty("Services", BindingFlags.Public | BindingFlags.Static);
         servicesProperty?.SetValue(null, serviceProvider);
+        
+        // Reset global settings to defaults for each test
+        ResetGlobalSettingsToDefaults();
+    }
+    
+    private void ResetGlobalSettingsToDefaults()
+    {
+        var globalSettings = BaseOptionsManager.GetGlobalSettings();
+        globalSettings.N2NCHotkey.Value = "Ctrl+Shift+N";
+        globalSettings.DPHotkey.Value = "Ctrl+Shift+D";
+        globalSettings.KRRLNHotkey.Value = "Ctrl+Shift+K";
     }
     [Fact]
     public void Constructor_ShouldInitializeWithDefaultValues()

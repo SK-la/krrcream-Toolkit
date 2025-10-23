@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using krrTools.Beatmaps;
+using Microsoft.Extensions.Logging;
 
 namespace krrTools.Tools.Preview
 {
@@ -55,6 +56,8 @@ namespace krrTools.Tools.Preview
         private double _quarterMs;
         private double _firstTime;
         private string? _currentBeatmapPath; // 用于判断是否需要重绘小节线
+        private bool _needsRefresh; // 标记是否需要刷新
+        private bool _pendingRedrawBarlines; // 待处理的barlines重绘标志
 
         // 布局状态
         private double _canvasWidth;
@@ -111,8 +114,13 @@ namespace krrTools.Tools.Preview
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            Dispatcher.BeginInvoke(() => RefreshDisplay(),
-                DispatcherPriority.Loaded);
+            // 如果有待处理的刷新请求，现在执行
+            if (_needsRefresh)
+            {
+                _needsRefresh = false;
+                Dispatcher.BeginInvoke(() => RefreshDisplay(_pendingRedrawBarlines),
+                    DispatcherPriority.Loaded);
+            }
         }
 
         /// <summary>
@@ -137,8 +145,17 @@ namespace krrTools.Tools.Preview
             // Console.WriteLine($"[LayeredPreview] Update queued: notes={_notes.Count}, columns={_columns}, " +
             //                   $"needRedrawBarlines={needRedrawBarlines}");
 
-            // 直接刷新显示
-            RefreshDisplay(needRedrawBarlines);
+            // 如果控件还没有加载，标记需要刷新，等待OnLoaded
+            if (!IsLoaded)
+            {
+                _needsRefresh = true;
+                _pendingRedrawBarlines = needRedrawBarlines;
+            }
+            else
+            {
+                // 直接刷新显示
+                RefreshDisplay(needRedrawBarlines);
+            }
         }
 
         private void RefreshDisplay(bool redrawBarlines = true)
@@ -162,14 +179,14 @@ namespace krrTools.Tools.Preview
             }
             catch (Exception e)
             {
-                Console.WriteLine($"[LayeredPreview] Refresh error: {e}");
+                Logger.WriteLine(LogLevel.Error, "[LayeredPreview] Refresh error: {0}", e);
             }
             finally
             {
                 stopwatch.Stop();
                 if (stopwatch.ElapsedMilliseconds > 3)
                 {
-                    Console.WriteLine($"[LayeredPreview] Warning: Refresh took {stopwatch.ElapsedMilliseconds} ms");
+                    Logger.WriteLine(LogLevel.Information, "[LayeredPreview] Refresh took {0} ms", stopwatch.ElapsedMilliseconds);
                 }
             }
         }

@@ -1,11 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using OsuParsers.Beatmaps;
 using OsuParsers.Beatmaps.Objects;
+using OsuParsers.Beatmaps.Objects.Mania;
 
 namespace krrTools.Beatmaps
 {
@@ -39,6 +37,17 @@ namespace krrTools.Beatmaps
             return asMs ? 60000.0 / Math.Max(1.0, bpm) : bpm;
         }
 
+        public static string GetBPMDisplay(this Beatmap beatmap)
+        {
+            var bpm = beatmap.MainBPM;
+            var bpmMax = beatmap.MaxBPM;
+            var bpmMin = beatmap.MinBPM;
+            
+            string BPMFormat = string.Format(CultureInfo.InvariantCulture, "{0:F0}({1:F0} - {2:F0})", bpm, bpmMin, bpmMax);
+                
+            return BPMFormat;
+        }
+        
         public static (NoteMatrix, List<int>) BuildMatrix(this Beatmap beatmap)
         {
             var cs = (int)beatmap.DifficultySection.CircleSize;
@@ -87,7 +96,6 @@ namespace krrTools.Beatmaps
 
         private static int columnToPositionX(int CS, int column)
         {
-            // int set_x = ((column - 1) * 512 / CS) + (256 / CS); // 不要删
             var x = (int)Math.Floor((column + 0.5) * (512.0 / CS));
             return x;
         }
@@ -149,17 +157,6 @@ namespace krrTools.Beatmaps
 
             if (beatmap.HitObjects.Count == 0) return null;
             
-            // if (path != null)
-            // {
-            //     beatmap.OriginalFilePath = path;
-            //
-            //     if (!File.Exists(path))
-            //         throw new FileNotFoundException($"文件未找到: {path}");
-            //
-            //     if (Path.GetExtension(path).ToLower() != ".osu")
-            //         throw new ArgumentException("文件扩展名必须为.osu");
-            // }
-            
             return beatmap;
         }
 
@@ -192,7 +189,7 @@ namespace krrTools.Beatmaps
 
             if (isHoldNote)
                 // 创建ManiaHoldNote对象
-                return new OsuParsers.Beatmaps.Objects.Mania.ManiaHoldNote(
+                return new ManiaHoldNote(
                     newPosition,
                     startTime,
                     endTime,
@@ -203,7 +200,7 @@ namespace krrTools.Beatmaps
                 );
             else
                 // 创建普通HitObject对象
-                return new OsuParsers.Beatmaps.Objects.Mania.ManiaNote(
+                return new ManiaNote(
                     newPosition,
                     startTime,
                     endTime,

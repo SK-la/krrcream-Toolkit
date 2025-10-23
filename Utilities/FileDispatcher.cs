@@ -1,14 +1,10 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Text;
 using System.Windows;
 using krrTools.Configuration;
 using krrTools.Core;
 using krrTools.Localization;
+using Microsoft.Extensions.Logging;
 using MessageBox = System.Windows.MessageBox;
 using MessageBoxButton = System.Windows.MessageBoxButton;
 
@@ -17,6 +13,7 @@ namespace krrTools.Utilities
     public class FileDispatcher
     {
         private readonly BeatmapTransformationService _transformationService;
+        private readonly SemaphoreSlim _ioSemaphore = new SemaphoreSlim(4); // 限制并发I/O操作数量
 
         // 进度更新委托
         public Action<int, int, string>? UpdateProgress { get; set; }
@@ -37,28 +34,37 @@ namespace krrTools.Utilities
             }
         }
 
+        // 构造函数重载，用于测试
+        public FileDispatcher(IModuleManager moduleManager)
+        {
+            _transformationService = new BeatmapTransformationService(moduleManager);
+        }
+
         public ConverterEnum ActiveTabTag { get; set; }
 
         public void ConvertFiles(string[] paths)
         {
+            // 传入的文件路径列表已经过预处理，确保都是有效的.osu文件路径
+            // 解析后跳过 0 note 文件
             ConvertWithResults(paths, ActiveTabTag);
         }
 
         private void ConvertWithResults(string[] paths, ConverterEnum activeTabTag)
         {
             var startTime = DateTime.Now;
-            Console.WriteLine($"[INFO] 开始转换 - 调用模块: {activeTabTag}, 使用活动设置, 文件数量: {paths.Length}");
+            Logger.WriteLine(LogLevel.Information, "[FileDispatcher] 开始转换 - 调用模块: {0}, 使用活动设置, 文件数量: {1}", activeTabTag, paths.Length);
 
             var created = new ConcurrentBag<string>();
             var failed = new ConcurrentBag<string>();
 
             int processedCount = 0;
 
-            // 并行处理每个文件，记录数量，限制并行度，保留2核心
+            // 并行处理每个文件，记录数量，限制并行度为4（I/O密集型）
             Parallel.ForEach(paths, 
-                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount - 2 }, 
+                new ParallelOptions { MaxDegreeOfParallelism = 4 }, 
                 p =>
             {
+                _ioSemaphore.Wait();
                 try
                 {
                     var outputPath = _transformationService.TransformAndSaveBeatmap(p, activeTabTag);
@@ -73,11 +79,12 @@ namespace krrTools.Utilities
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ERROR] 并行转换文件失败: {p}\n{ex}");
+                    Logger.WriteLine(LogLevel.Error, "[FileDispatcher] 文件 {0} 转换失败: {1}", p, ex);
                     failed.Add(p);
                 }
                 finally
                 {
+                    _ioSemaphore.Release();
                     // 更新进度
                     int current = Interlocked.Increment(ref processedCount);
                     UpdateProgress?.Invoke(current, paths.Length, string.Empty);
@@ -88,17 +95,17 @@ namespace krrTools.Utilities
             {
                 try
                 {
-                    Console.WriteLine($"[INFO] 转换器: {activeTabTag}, 生成文件数量: {created.Count}");
+                    Logger.WriteLine(LogLevel.Information, "[FileDispatcher] 转换器: {0}, 生成文件数量: {1}", activeTabTag, created.Count);
 
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ERROR] 广播已转换文件失败: {ex.Message}");
+                    Logger.WriteLine(LogLevel.Error, "[FileDispatcher] 广播已转换文件失败: {0}", ex.Message);
                 }
             }
 
             var duration = DateTime.Now - startTime;
-            Console.WriteLine($"[INFO] 转换器: {activeTabTag}, 成功: {created.Count}, 失败: {failed.Count}, 用时: {duration.TotalSeconds:F4}s");
+            Logger.WriteLine(LogLevel.Information, "[FileDispatcher] 转换器: {0}, 成功: {1}, 失败: {2}, 用时: {3:F4}s", activeTabTag, created.Count, failed.Count, duration.TotalSeconds);
 
             ShowConversionResult(created.ToList(), failed.ToList());
         }
@@ -119,7 +126,7 @@ namespace krrTools.Utilities
                 }
                 else
                 {
-                    var sb = new System.Text.StringBuilder();
+                    var sb = new StringBuilder();
                     sb.AppendLine($"成功转换 {created.Count} 个文件：");
                     int maxShow = 5;
                     for (int i = 0; i < Math.Min(created.Count, maxShow); i++)

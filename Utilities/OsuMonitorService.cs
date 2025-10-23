@@ -17,9 +17,10 @@ namespace krrTools.Utilities;
 public class OsuMonitorService
 {
     private int _lastProcessId = -1;
-    private readonly IOsuMemoryReader _reader;
+    private IOsuMemoryReader? _reader;
     private int _lastProcessCount = -1;
-    private bool _lastIsOsuRunning = false;
+    private bool _lastIsOsuRunning;
+    private bool _lastIsPlaying;
     private string _lastBeatmapFile = string.Empty;
 
     [Inject]
@@ -27,10 +28,7 @@ public class OsuMonitorService
 
     public OsuMonitorService()
     {
-#pragma warning disable CS0618 // 必须构建初始化，否则有高延迟问题
-        _reader = OsuMemoryReader.Instance;
-#pragma warning restore CS0618 // Type or member is obsolete
-
+        // 延迟初始化_reader，只有在需要时创建
         // 注入服务
         this.InjectServices();
     }
@@ -40,13 +38,19 @@ public class OsuMonitorService
     /// </summary>
     public void DetectOsuProcess()
     {
+        if (_reader == null)
+        {
+#pragma warning disable CS0618 // 必须构建初始化，否则有高延迟问题
+            _reader = OsuMemoryReader.Instance;
+#pragma warning restore CS0618 // Type or member is obsolete
+        }
         var osuProcesses = Process.GetProcessesByName("osu!");
         var isOsuRunning = osuProcesses.Length > 0;
 
         // 只有当状态变化时才输出日志
         if (_lastProcessCount != osuProcesses.Length || _lastIsOsuRunning != isOsuRunning)
         {
-            Console.WriteLine($"[OsuMonitorService] osu!进程数: {osuProcesses.Length}, 运行: {isOsuRunning}");
+            Logger.WriteLine(LogLevel.Information, "[OsuMonitorService] osu!进程数: {0}, 运行: {1}", osuProcesses.Length, isOsuRunning);
             _lastProcessCount = osuProcesses.Length;
             _lastIsOsuRunning = isOsuRunning;
         }
@@ -54,7 +58,12 @@ public class OsuMonitorService
         // 更新全局状态
         StateBarManager.IsOsuRunning.Value = isOsuRunning;
 
-        StateBarManager.IsPlaying.Value = isOsuRunning && IsPlaying();
+        var currentIsPlaying = isOsuRunning && IsPlaying();
+        if (currentIsPlaying != _lastIsPlaying)
+        {
+            StateBarManager.IsPlaying.Value = currentIsPlaying;
+            _lastIsPlaying = currentIsPlaying;
+        }
 
         if (!isOsuRunning)
         {
@@ -97,7 +106,7 @@ public class OsuMonitorService
                         songsPath != BaseOptionsManager.GetGlobalSettings().SongsPath.Value)
                     {
                         BaseOptionsManager.GetGlobalSettings().SongsPath.Value = songsPath;
-                        Console.WriteLine("[OsuMonitorService] 客户端: osu!, 进程ID: {0}, 加载Songs路径: {1}",
+                        Logger.WriteLine(LogLevel.Information, "[OsuMonitorService] 客户端: osu!, 进程ID: {0}, 加载Songs路径: {1}",
                             selectedProcess.Id, songsPath);
                     }
 
@@ -115,13 +124,15 @@ public class OsuMonitorService
 
     /// <summary>
     /// 读取内存数据
-    /// /// </summary>
+    /// </summary>
     public string ReadMemoryData()
     {
+        if (_reader == null) return string.Empty;
+
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            if (_reader.ReadSongSelectGameMode() != 3) return string.Empty; // 3 = 观看录像模式，跳过
+            // if (_reader.ReadSongSelectGameMode() != 3) return string.Empty; // 这是监听F1选歌模式，不是选谱，所以使用的话体验差一点
 
             var beatmapFile = _reader.GetOsuFileName();
             var mapFolderName = _reader.GetMapFolderName();
@@ -131,7 +142,7 @@ public class OsuMonitorService
             // 只有当beatmap文件变化时才输出日志
             if (_lastBeatmapFile != path)
             {
-                Console.WriteLine($"[OsuMonitorService] 内存读取成功,用时{stopwatch.ElapsedMilliseconds}ms: beatmapFile={path}");
+                Logger.WriteLine(LogLevel.Information, "[OsuMonitorService] 内存读取成功,用时{0}ms: beatmapFile={1}", stopwatch.ElapsedMilliseconds, path);
                 _lastBeatmapFile = path;
             }
 
@@ -139,7 +150,7 @@ public class OsuMonitorService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OsuMonitorService] 未能读取内存数据: {ex.Message}");
+            Logger.WriteLine(LogLevel.Error, "[OsuMonitorService] 未能读取内存数据: {0}", ex.Message);
             return string.Empty;
         }
     }
@@ -147,16 +158,17 @@ public class OsuMonitorService
     /// <summary>
     /// 检测是否在playing状态
     /// </summary>
-    public bool IsPlaying()
+    private bool IsPlaying()
     {
+        if (_reader == null) return false;
+
         try
         {
             // 假设playing模式是0，选歌是其他
-            var mode = _reader.ReadSongSelectGameMode();
-            var isPlaying = _reader.ReadPlayedGameMode();
-            Logger.WriteLine(LogLevel.Debug,
-                $"[OsuMonitorService] 读取playing状态: mode={mode}, isPlaying={isPlaying}");
-            return isPlaying == 0;
+            var playingMods = _reader.GetPlayingMods();
+            var acc = _reader.ReadAcc();
+            // 移除频繁的日志输出，只在状态变化时输出
+            return playingMods == 0 || acc > 0;
         }
         catch
         {

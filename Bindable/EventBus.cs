@@ -1,10 +1,6 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using OsuParsers.Beatmaps;
 using krrTools.Beatmaps;
+using krrTools.Configuration;
 
 namespace krrTools.Bindable
 {
@@ -201,7 +197,7 @@ namespace krrTools.Bindable
     public class BeatmapChangedEvent
     {
         public required string FilePath { get; set; }
-        public required string FileName { get; set; }
+        // public required string FileName { get; set; }
         
         /// <summary>
         /// Event type to distinguish between path change and full analysis
@@ -209,24 +205,24 @@ namespace krrTools.Bindable
         public BeatmapChangeType ChangeType { get; set; }
         
         /// <summary>
-        /// 只读的谱面对象，提供完整的谱面数据访问（可选）
-        /// </summary>
-        public Beatmap? Beatmap { get; set; }
-
-        /// <summary>
         /// 构造函数，不强制要求Beatmap对象
         /// </summary>
         public BeatmapChangedEvent()
         {
         }
-
-        /// <summary>
-        /// 构造函数，设置Beatmap对象，事件携带只读谱面数据
-        /// </summary>
-        public BeatmapChangedEvent(Beatmap beatmap) : this()
-        {
-            Beatmap = beatmap;
-        }
+                
+        // /// <summary>
+        // /// 只读的谱面对象，提供完整的谱面数据访问（可选）
+        // /// </summary>
+        // public Beatmap? Beatmap { get; set; }
+        
+        // /// <summary>
+        // /// 构造函数，设置Beatmap对象，事件携带只读谱面数据
+        // /// </summary>
+        // public BeatmapChangedEvent(Beatmap beatmap) : this()
+        // {
+        //     Beatmap = beatmap;
+        // }
     }
 
     public class MonitoringEnabledChangedEvent : ValueChangedEvent<bool> { }
@@ -241,7 +237,12 @@ namespace krrTools.Bindable
         /// <summary>
         /// The complete analysis result
         /// </summary>
-        public required OsuAnalysisResult AnalysisResult { get; set; }
+        public required OsuAnalysisBasic AnalysisBasic { get; set; }
+        
+        /// <summary>
+        /// The performance analysis result
+        /// </summary>
+        public OsuAnalysisPerformance? AnalysisPerformance { get; set; }
     }
 
     /// <summary>
@@ -252,11 +253,11 @@ namespace krrTools.Bindable
     /// <summary>
     /// Event raised when file source changes in FileDropZone
     /// </summary>
-    public class FileSourceChangedEvent : ValueChangedEvent<Configuration.FileSource>
+    public class FileSourceChangedEvent : ValueChangedEvent<FileSource>
     {
         public string[]? Files { get; }
         
-        public FileSourceChangedEvent(Configuration.FileSource oldSource, Configuration.FileSource newSource, string[]? files)
+        public FileSourceChangedEvent(FileSource oldSource, FileSource newSource, string[]? files)
         {
             OldValue = oldSource;
             NewValue = newSource;

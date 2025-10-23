@@ -86,33 +86,6 @@ public class IPreviewProcessorTests
     }
 
     [Fact]
-    public void BuildOriginalVisual_WithDifferentBeatmaps_ShouldCallCorrectly()
-    {
-        STATestHelper.RunInSTA(() =>
-        {
-            // Arrange
-            var processor = new Mock<IPreviewProcessor>();
-            var beatmap1 = new Mock<Beatmap>().Object;
-            var beatmap2 = new Mock<Beatmap>().Object;
-            var element1 = new Grid();
-            var element2 = new Canvas();
-
-            processor.Setup(p => p.BuildOriginalVisual(beatmap1)).Returns(element1);
-            processor.Setup(p => p.BuildOriginalVisual(beatmap2)).Returns(element2);
-
-            // Act
-            var result1 = processor.Object.BuildOriginalVisual(beatmap1);
-            var result2 = processor.Object.BuildOriginalVisual(beatmap2);
-
-            // Assert
-            Assert.Equal(element1, result1);
-            Assert.Equal(element2, result2);
-            processor.Verify(p => p.BuildOriginalVisual(beatmap1), Times.Once);
-            processor.Verify(p => p.BuildOriginalVisual(beatmap2), Times.Once);
-        });
-    }
-
-    [Fact]
     public void BuildConvertedVisual_WithDifferentBeatmaps_ShouldCallCorrectly()
     {
         STATestHelper.RunInSTA(() =>

@@ -1,4 +1,3 @@
-using System;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +18,15 @@ namespace krrTools.Bindable;
 /// </summary>
 public static class Injector
 {
+    private static IServiceProvider? _testServiceProvider;
+
+    /// <summary>
+    /// 设置测试用的服务提供者（仅用于测试）
+    /// </summary>
+    public static void SetTestServiceProvider(IServiceProvider? provider)
+    {
+        _testServiceProvider = provider;
+    }
     /// <summary>
     /// 工厂方法：创建对象并自动注入依赖
     /// </summary>
@@ -51,7 +59,7 @@ public static class Injector
     /// Inject services into properties marked with [Inject] attribute.
     /// Only injects if the property is currently null.
     /// </summary>
-    public static void InjectServices(object target)
+    public static void InjectServices(object? target)
     {
         if (target == null) return;
 
@@ -71,7 +79,8 @@ public static class Injector
 
             try
             {
-                var service = App.Services.GetRequiredService(serviceType);
+                var serviceProvider = _testServiceProvider ?? App.Services;
+                var service = serviceProvider.GetRequiredService(serviceType);
                 property.SetValue(target, service);
             }
             catch (Exception ex)

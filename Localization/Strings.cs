@@ -5,8 +5,14 @@ namespace krrTools.Localization
     /// </summary>
     public static class Strings
     {
-        public const string WindowTitle = "krrcream's Toolkit V3.0.0";
+        public const string WindowTitle = "krrcream's Toolkit V3.0.1";
 
+        // Metadeta
+        public const string ConverterTag = "Converter";
+        public const string KRRLNTag = "LN.";
+        public const string NToNCTag = "NtNC.";
+        public const string DPTag = "DP.";
+        
         // Tab headers
         public const string TabN2NC = "NtoN Converter|NtoN转换器";
         // public const string TabYLsLN = "YLS LN Transformer|凉雨转面器";
@@ -98,9 +104,7 @@ namespace krrTools.Localization
         public const string DPLeftMinKeysTemplate = "Min Keys: {0}|最小键数: {0}";
         public const string DPRightMaxKeysTemplate = "Max Keys: {0}|最大键数: {0}";
         public const string DPRightMinKeysTemplate = "Min Keys: {0}|最小键数: {0}";
-        public const string DPModifyKeysCheckbox = "Enable Modify keys|启用修改键数";
-        public const string DPModifyKeysTooltip = "Enable modification of single-side key count|启用键位修改";
-        public const string DPKeysTooltip = "Keys explanation|键数说明";
+        public const string DPKeysSliderLabel = "Keys: {0}|键数: {0}";
         public const string DPLeftLabel = "Left|左手";
         public const string DPRightLabel = "Right|右手";
         public const string DPMirrorLabel = "Mirror|镜像";
@@ -179,6 +183,8 @@ namespace krrTools.Localization
         public const string OriginalHint = "Original|原始";
         public const string ConvertedHint = "Converted|结果";
         public const string DropHint = "Drag & Drop .osu files in here|将 .osu 文件拖到此区域";
+        public const string DroppedPrefix = "[Dropped] |[拖入] ";
+        public const string ListenedPrefix = "[Listened] |[监听] ";
         public const string StartButtonText = "Start|开始转换";
         public const string DropFilesHint = "{0} file(s) staged. Click Start to convert.|已暂存 {0} 个文件，点击开始转换。";
         public const string NoDataAvailable = "No data available|无可用数据";

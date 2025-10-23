@@ -15,13 +15,13 @@ namespace krrTools.Tools.N2NC
 
         // 动态最大值将由ViewModel的约束管理处理
         [Option(LabelKey = nameof(N2NCMaxKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
-        public Bindable<double> MaxKeys { get; } = new Bindable<double>(4);
+        public Bindable<double> MaxKeys { get; } = new Bindable<double>(8);
 
         [Option(LabelKey = nameof(N2NCMinKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
-        public Bindable<double> MinKeys { get; } = new Bindable<double>(1);
+        public Bindable<double> MinKeys { get; } = new Bindable<double>(2);
 
-        [Option(LabelKey = nameof(N2NCTransformSpeedTemplate), Min = 1, Max = 8, UIType = UIType.Slider, DisplayMapField = nameof(TransformSpeedDict), DataType = typeof(double), IsRefresher = true)]
-        public Bindable<double> TransformSpeed { get; } = new Bindable<double>(5);
+        [Option(LabelKey = nameof(N2NCTransformSpeedTemplate), Min = 0, Max = 8, UIType = UIType.Slider, DisplayMapField = nameof(TransformSpeedDict), DataType = typeof(double), IsRefresher = true)]
+        public Bindable<double> TransformSpeed { get; } = new Bindable<double>(3);
 
         /// <summary>
         /// 默认构造函数，使用默认值
@@ -38,14 +38,15 @@ namespace krrTools.Tools.N2NC
         // N2NC 的 TransformSpeed 显示映射
         public static readonly Dictionary<double, string> TransformSpeedDict = new Dictionary<double, string>
         {
-            { 1, "1/16" },
-            { 2, "1/8" },
-            { 3, "1/4" },
-            { 4, "1/2" },
-            { 5, "1" },
-            { 6, "2" },
+            { 0, "1/8" },
+            { 1, "1/4" },
+            { 2, "1/2" },
+            { 3, "3/4" },
+            { 4, "1" },
+            { 5, "2" },
+            { 6, "3" },
             { 7, "4" },
-            { 8, "8" }
+            { 8, "∞" }
         };
 
         [Option(LabelKey = nameof(SeedButtonLabel), UIType = UIType.NumberBox, DataType = typeof(int?), IsRefresher = true)]
@@ -55,11 +56,8 @@ namespace krrTools.Tools.N2NC
             set => SetProperty(ref _seed, value);
         }
         private int? _seed = 114514;
-
-        public List<int>? SelectedKeyTypes { get; set; }
-
         public KeySelectionFlags? SelectedKeyFlags { get; set; } = KeySelectionFlags.None;
-
+        
         public override void Validate()
         {
             base.Validate(); // First clamp to Min/Max
@@ -69,7 +67,7 @@ namespace krrTools.Tools.N2NC
             if (TargetKeys.Value > 18) TargetKeys.Value = 18;
 
             // 确保 TransformSpeed 在有效范围内
-            if (TransformSpeed.Value < 1) TransformSpeed.Value = 1;
+            if (TransformSpeed.Value < 0) TransformSpeed.Value = 0;
             if (TransformSpeed.Value > 8) TransformSpeed.Value = 8;
 
             // 确保 MinKeys 和 MaxKeys 在合理范围内

@@ -1,4 +1,3 @@
-using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -38,6 +37,14 @@ namespace krrTools.Utilities
             InitializeUI();
         }
 
+        // 专门用于测试的构造函数，不进行依赖注入
+        public FileDropZone(FileDispatcher fileDispatcher, bool skipInjection)
+        {
+            _viewModel = new FileDropZoneViewModel(fileDispatcher);
+            DataContext = _viewModel;
+            InitializeUI();
+        }
+
         private void InitializeUI()
         {
             Background = new SolidColorBrush(Color.FromArgb(160, 245, 248, 255));
@@ -47,6 +54,7 @@ namespace krrTools.Utilities
             Margin = new Thickness(8, 2, 8, 5);
             Padding = new Thickness(12);
             Height = 80; // 增加高度以容纳进度条
+            AllowDrop = true; // 启用文件拖放
 
             // 绑定 BorderBrush 到 ProgressBrush
             var borderBrushBinding = new Binding("ProgressBrush") { Source = _viewModel };
@@ -87,6 +95,7 @@ namespace krrTools.Utilities
             Child = mainGrid;
 
             Drop += OnDrop;
+            DragOver += OnDragOver;
             StartConversionButton.Click += StartConversionButton_Click;
             SharedUIComponents.LanguageChanged += OnLanguageChanged;
             Unloaded += FileDropZone_Unloaded;
@@ -125,6 +134,15 @@ namespace krrTools.Utilities
             if (osuFiles.Count == 0) return;
 
             _viewModel.SetFiles(osuFiles.ToArray(), source: FileSource.Dropped);
+        }
+
+        private void OnDragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) 
+                ? DragDropEffects.Copy 
+                : DragDropEffects.None;
+            
+            e.Handled = true;
         }
 
         private void StartConversionButton_Click(object sender, RoutedEventArgs e)

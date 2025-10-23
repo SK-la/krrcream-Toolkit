@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Media;
 using krrTools.Beatmaps;
 using krrTools.Bindable;
+using Microsoft.Extensions.Logging;
 using krrTools.Configuration;
 using krrTools.Localization;
 using krrTools.Tools.Preview;
@@ -69,6 +70,9 @@ namespace krrTools.Utilities
 
             // 初始化显示文字
             UpdateDisplayText();
+
+            // 订阅语言切换事件
+            LocalizationService.LanguageChanged += OnLanguageChanged;
         }
 
         // UI 相关属性
@@ -78,6 +82,8 @@ namespace krrTools.Utilities
         // 本地化
         private readonly DynamicLocalizedString _dropHintLocalized = new(Strings.DropHint);
         private readonly DynamicLocalizedString _dropFilesHintLocalized = new(Strings.DropFilesHint);
+        private readonly DynamicLocalizedString _droppedPrefixLocalized = new(Strings.DroppedPrefix);
+        private readonly DynamicLocalizedString _listenedPrefixLocalized = new(Strings.ListenedPrefix);
 
         // 属性
         private string _displayText = string.Empty;
@@ -160,7 +166,6 @@ namespace krrTools.Utilities
 
         public void SetFiles(string[]? files, FileSource source = FileSource.Dropped)
         {
-            // TODO: 需要梳理
             var oldSource = _currentSource;
             _stagedPaths = files;
             _isSingleFile = files?.Length == 1;
@@ -183,7 +188,11 @@ namespace krrTools.Utilities
                 _lastLoadedFile = _stagedPaths[0];
                 try
                 {
-                    PreviewDual.LoadPreview(_stagedPaths[0]);
+                    // 只在用户拖拽文件时主动加载预览，监听模式由PreviewViewModel处理
+                    if (_currentSource == FileSource.Dropped)
+                    {
+                        PreviewDual.LoadPreview(_stagedPaths[0]);
+                    }
                     
                     if (string.IsNullOrEmpty(_backgroundPath))
                     {
@@ -201,26 +210,26 @@ namespace krrTools.Utilities
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load preview for {_stagedPaths[0]}: {ex.Message}");
+                    Logger.WriteLine(LogLevel.Error, "Failed to load preview for {0}: {1}", _stagedPaths[0], ex.Message);
                 }
             }
         }
 
         public void ConvertFiles()
         {
-            Console.WriteLine($"[DEBUG] ConvertFiles called. _stagedPaths: {_stagedPaths?.Length ?? 0}, GetActiveTabTag: {GetActiveTabTag}");
+            Logger.WriteLine(LogLevel.Debug, "[FileDropZone] ConvertFiles called. _stagedPaths: {0}, GetActiveTabTag: {1}", _stagedPaths?.Length ?? 0, GetActiveTabTag?.Invoke().ToString() ?? "null");
             if (_stagedPaths is { Length: > 0 } && GetActiveTabTag != null)
             {
                 // 在UI层过滤非Mania谱面
-                var filteredPaths = _stagedPaths.Where(BeatmapAnalyzer.IsManiaBeatmap).ToArray();
+                var filteredPaths = _stagedPaths.Where(BeatmapFileHelper.IsManiaBeatmap).ToArray();
                 var skippedCount = _stagedPaths.Length - filteredPaths.Length;
                 if (skippedCount > 0)
                 {
-                    Console.WriteLine($"[INFO] UI层过滤跳过 {skippedCount} 个非Mania文件");
+                    Logger.WriteLine(LogLevel.Information, "[FileDropZone] UI层过滤跳过 {0} 个非Mania文件", skippedCount);
                 }
 
                 var activeTab = GetActiveTabTag();
-                Console.WriteLine($"[DEBUG] ActiveTabTag: {activeTab}");
+                Logger.WriteLine(LogLevel.Debug, "[FileDropZone] ActiveTabTag: {0}", activeTab);
 
                 // 开始处理
                 IsProcessing = true;
@@ -232,7 +241,7 @@ namespace krrTools.Utilities
             }
             else
             {
-                Console.WriteLine($"[DEBUG] ConvertFiles skipped. Has files: {_stagedPaths is { Length: > 0 }}, Has GetActiveTabTag: {GetActiveTabTag != null}");
+                Logger.WriteLine(LogLevel.Debug, "[FileDropZone] ConvertFiles skipped. Has files: {0}, Has GetActiveTabTag: {1}", _stagedPaths is { Length: > 0 }, GetActiveTabTag != null);
             }
         }
 
@@ -254,7 +263,7 @@ namespace krrTools.Utilities
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[ERROR] Error accessing directory {item}: {ex.Message}");
+                        Logger.WriteLine(LogLevel.Error, "[FileDropZone] Error accessing directory {0}: {1}", item, ex.Message);
                     }
                 }
             }
@@ -272,8 +281,8 @@ namespace krrTools.Utilities
             {
                 string prefix = _currentSource switch
                 {
-                    FileSource.Dropped => "[拖入] ",
-                    FileSource.Listened => "[监听] ",
+                    FileSource.Dropped => _droppedPrefixLocalized.Value,
+                    FileSource.Listened => _listenedPrefixLocalized.Value,
                     _ => ""
                 };
                 DisplayText = prefix + string.Format(_dropFilesHintLocalized.Value, _stagedPaths.Length);
@@ -287,6 +296,11 @@ namespace krrTools.Utilities
                 _currentSource = source;
                 UpdateDisplayText();
             }
+        }
+
+        private void OnLanguageChanged()
+        {
+            UpdateDisplayText();
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

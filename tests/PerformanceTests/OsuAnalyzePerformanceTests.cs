@@ -45,8 +45,24 @@ public class OsuAnalyzePerformanceTests : IDisposable
 
         // 读取第一个真实文件到内存中
         var sampleFilePath = osuFiles.First();
-        var sampleBeatmap = BeatmapDecoder.Decode(sampleFilePath);
         _testOutputHelper.WriteLine($"Loaded sample beatmap from: {Path.GetFileName(sampleFilePath)}");
+
+        // 解码谱面文件
+        var sampleBeatmap = BeatmapDecoder.Decode(sampleFilePath);
+        if (sampleBeatmap == null)
+        {
+            _testOutputHelper.WriteLine("Failed to decode sample beatmap. Skipping test.");
+            return;
+        }
+
+        // 预热阶段
+        _testOutputHelper.WriteLine("Warmup phase...");
+        for (int i = 0; i < 3; i++)
+        {
+            var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(sampleBeatmap);
+            var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(sampleBeatmap);
+        }
+        _testOutputHelper.WriteLine("Warmup completed.");
 
         // 模拟SimulatedFileCount个文件处理 - 每个任务都处理同一个内存中的谱面
         const int simulatedFileCount = SimulatedFileCount;
@@ -54,7 +70,12 @@ public class OsuAnalyzePerformanceTests : IDisposable
         // 并行分析
         var stopwatch = Stopwatch.StartNew();
         var tasks = Enumerable.Range(0, simulatedFileCount)
-            .Select(i => Task.Run(() => OsuAnalyzer.Analyze($"simulated_{i}.osu", sampleBeatmap)))
+            .Select(async _ =>
+            {
+                var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(sampleBeatmap);
+                var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(sampleBeatmap);
+                return (basicInfo, performance);
+            })
             .ToList();
 
         var results = await Task.WhenAll(tasks);
@@ -63,9 +84,15 @@ public class OsuAnalyzePerformanceTests : IDisposable
         // 验证所有结果
         foreach (var result in results)
         {
-            Assert.NotNull(result);
-            Assert.True(result.XXY_SR >= 0);
-            Assert.True(result.MaxKPS >= 0);
+            var (basicInfo, performance) = result;
+            Assert.NotNull(basicInfo);
+            if (performance == null)
+            {
+                _testOutputHelper.WriteLine($"Analysis failed for {basicInfo.Title}");
+            }
+            Assert.NotNull(performance);
+            Assert.True(performance.XXY_SR >= 0);
+            Assert.True(basicInfo.MaxKPS >= 0);
         }
 
         // 计算性能统计

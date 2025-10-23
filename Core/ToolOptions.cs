@@ -1,8 +1,8 @@
-using System;
 using System.ComponentModel;
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using krrTools.Bindable;
+using Microsoft.Extensions.Logging;
 
 namespace krrTools.Core
 {
@@ -110,6 +110,9 @@ namespace krrTools.Core
         protected override void OnPropertyChanged(PropertyChangedEventArgs e)
         {
             if (IsLoading) return; // 加载时避免触发PropertyChanged
+
+            // 测试调试，显示名
+            // Logger.WriteLine(LogLevel.Debug,$"[ToolOptions] Property '{e.PropertyName}' changed");
             base.OnPropertyChanged(e);
             // 设置变化时，通过UI或其他方式触发BaseOptionsManager.SaveOptions
         }
@@ -117,7 +120,7 @@ namespace krrTools.Core
         /// <summary>
         /// 从另一个选项对象复制所有Bindable属性的值
         /// </summary>
-        public void CopyFrom(ToolOptionsBase other)
+        public void CopyFrom(ToolOptionsBase? other)
         {
             if (other == null || other.GetType() != GetType()) return;
 
@@ -207,6 +210,8 @@ namespace krrTools.Core
     /// <summary>
     /// 预设类型枚举
     /// </summary>
+    
+    //TODO: 单一枚举不合理，应该由各个ToolOptions自行定义预设枚举，并自动反射创建
     public enum PresetKind
     {
         [Description("Default|默认")] Default = 0,

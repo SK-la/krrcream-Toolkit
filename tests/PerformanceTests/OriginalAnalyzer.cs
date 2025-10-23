@@ -1,6 +1,4 @@
-using System;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using krrTools.Beatmaps;
 using OsuParsers.Beatmaps;
@@ -13,16 +11,15 @@ namespace krrTools.Tests.PerformanceTests;
 /// </summary>
 public static class OriginalAnalyzer
 {
-    public static OsuAnalysisResult Analyze(string filePath, Beatmap beatmap)
+    public static OsuAnalysisBasic Analyze(string filePath, Beatmap beatmap)
     {
         // 单线程计算SR指标
-        var calculator = new SRCalculator();
+        var calculator = SRCalculator.Instance;
 
         // compute custom stats via SRCalculator
         var keys = (int)beatmap.DifficultySection.CircleSize;
         var od = beatmap.DifficultySection.OverallDifficulty;
-        var notes = calculator.getNotes(beatmap);
-        var xxySr = calculator.Calculate(notes, keys, od, out _);
+        var xxySr = calculator.CalculateSR(beatmap, out _);
         double krrLv = -1;
         if (keys <= 10)
         {
@@ -34,18 +31,14 @@ public static class OriginalAnalyzer
             krrLv = LV > 0 ? LV : -1;
         }
 
-        // 单线程计算KPS指标
-        var (notesCount, maxKPS, avgKPS) = CalculateKPSMetrics(beatmap);
+        // 单线程计算音符数量
+        var notesCount = beatmap.HitObjects.Count(obj => obj is HitCircle || obj is Slider || obj is Spinner);
 
         // gather standard metadata with OsuParsers
         var bpmDisplay = GetBPMDisplay(beatmap);
 
-        var result = new OsuAnalysisResult
+        var result = new OsuAnalysisBasic
         {
-            // File information
-            FilePath = filePath,
-            FileName = Path.GetFileName(filePath),
-
             // Basic metadata
             Diff = beatmap.MetadataSection.Version,
             Title = beatmap.MetadataSection.Title,
@@ -54,69 +47,26 @@ public static class OriginalAnalyzer
             BPMDisplay = bpmDisplay,
 
             // Difficulty settings
-            Keys = keys,
             OD = od,
             HP = beatmap.DifficultySection.HPDrainRate,
 
-            // Analysis results
-            XXY_SR = xxySr,
-            KRR_LV = krrLv,
-            LNPercent = beatmap.GetLNPercent(),
-
             // Performance metrics
             NotesCount = notesCount,
-            MaxKPS = maxKPS,
-            AvgKPS = avgKPS,
 
             // Beatmap identifiers
             BeatmapID = beatmap.MetadataSection.BeatmapID,
             BeatmapSetID = beatmap.MetadataSection.BeatmapSetID,
 
             // Raw beatmap object
-            Beatmap = beatmap
+            // Beatmap = beatmap
         };
 
         return result;
     }
 
-    private static (int notesCount, double maxKPS, double avgKPS) CalculateKPSMetrics(Beatmap beatmap)
+    private static int CalculateNotesCount(Beatmap beatmap)
     {
-        var hitObjects = beatmap.HitObjects;
-        if (hitObjects.Count == 0)
-            return (0, 0, 0);
-
-        // 计算KPS
-        var notes = hitObjects.Where(obj => obj is HitCircle || obj is Slider || obj is Spinner)
-            .OrderBy(obj => obj.StartTime)
-            .ToList();
-
-        if (notes.Count == 0)
-            return (0, 0, 0);
-
-        // 使用滑动窗口计算最大KPS
-        const int windowMs = 1000; // 1秒窗口
-        double maxKPS = 0;
-        double totalKPS = 0;
-        var windowCount = 0;
-
-        for (var i = 0; i < notes.Count; i++)
-        {
-            var count = 1;
-            for (var j = i + 1; j < notes.Count; j++)
-                if (notes[j].StartTime - notes[i].StartTime <= windowMs)
-                    count++;
-                else
-                    break;
-
-            double kps = count;
-            maxKPS = Math.Max(maxKPS, kps);
-            totalKPS += kps;
-            windowCount++;
-        }
-
-        var avgKPS = windowCount > 0 ? totalKPS / windowCount : 0;
-
-        return (notes.Count, maxKPS, avgKPS);
+        return beatmap.HitObjects.Count(obj => obj is HitCircle || obj is Slider || obj is Spinner);
     }
 
     private static string GetBPMDisplay(Beatmap beatmap)

@@ -67,11 +67,12 @@ namespace krrTools.Tools.N2NC
             var keysWrap = new WrapPanel { Orientation = Orientation.Horizontal, ItemHeight = 33 };
             var flagOrder = new[]
             {
-                KeySelectionFlags.K4, KeySelectionFlags.K5, KeySelectionFlags.K6, KeySelectionFlags.K7,
+                KeySelectionFlags.K3Minus,KeySelectionFlags.K4, KeySelectionFlags.K5, KeySelectionFlags.K6, KeySelectionFlags.K7,
                 KeySelectionFlags.K8, KeySelectionFlags.K9, KeySelectionFlags.K10, KeySelectionFlags.K10Plus
             };
             var flagLabels = new Dictionary<KeySelectionFlags, string>
             {
+                [KeySelectionFlags.K3Minus] = "3K-",
                 [KeySelectionFlags.K4] = "4K",
                 [KeySelectionFlags.K5] = "5K",
                 [KeySelectionFlags.K6] = "6K",
@@ -141,17 +142,11 @@ namespace krrTools.Tools.N2NC
                 SettingsChanged?.Invoke(this, EventArgs.Empty);
             };
 
-            var filterLabel = Strings.Localize(Strings.FilterLabel);
-
-            void UpdateFilterLabel()
-            {
-                filterLabel = Strings.Localize(Strings.FilterLabel);
-            }
-
-            SharedUIComponents.LanguageChanged += UpdateFilterLabel;
-            Unloaded += (_, _) => SharedUIComponents.LanguageChanged -= UpdateFilterLabel;
-
-            var keysPanel = SharedUIComponents.CreateLabeledRow(filterLabel, keysMainPanel, rowMargin);
+            var keysPanel = new StackPanel { Orientation = Orientation.Vertical, Margin = rowMargin };
+            TextBlock filterLabelBlock = SharedUIComponents.CreateHeaderLabel(Strings.FilterLabel);
+            filterLabelBlock.Margin = new Thickness(0, 0, 0, 4);
+            keysPanel.Children.Add(filterLabelBlock);
+            keysPanel.Children.Add(keysMainPanel);
             grid.Children.Add(keysPanel);
 
             // 预设面板
@@ -163,29 +158,10 @@ namespace krrTools.Tools.N2NC
                     if (opt == null) return;
                     _viewModel.TargetKeys = opt.TargetKeys.Value;
                     _viewModel.TransformSpeed = opt.TransformSpeed.Value;
+                    _viewModel.MaxKeys = opt.MaxKeys.Value;
+                    _viewModel.MinKeys = opt.MinKeys.Value;
                     _viewModel.Seed = opt.Seed;
-                    if (opt.SelectedKeyFlags.HasValue)
-                    {
-                        _viewModel.KeySelection = opt.SelectedKeyFlags.Value;
-                    }
-                    else if (opt.SelectedKeyTypes != null)
-                    {
-                        var flags = KeySelectionFlags.None;
-                        foreach (var k in opt.SelectedKeyTypes)
-                            switch (k)
-                            {
-                                case 4: flags |= KeySelectionFlags.K4; break;
-                                case 5: flags |= KeySelectionFlags.K5; break;
-                                case 6: flags |= KeySelectionFlags.K6; break;
-                                case 7: flags |= KeySelectionFlags.K7; break;
-                                case 8: flags |= KeySelectionFlags.K8; break;
-                                case 9: flags |= KeySelectionFlags.K9; break;
-                                case 10: flags |= KeySelectionFlags.K10; break;
-                                default: flags |= KeySelectionFlags.K10Plus; break;
-                            }
-
-                        _viewModel.KeySelection = flags;
-                    }
+                    _viewModel.KeySelection = opt.SelectedKeyFlags ?? KeySelectionFlags.None; 
                 }
             );
 
@@ -193,15 +169,18 @@ namespace krrTools.Tools.N2NC
             if (presetsBorder is StackPanel outerPanel)
             {
                 var builtinPresetsPanel = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-                foreach (var (kind, _, options) in PresetBottom.GetPresetTemplates())
+                foreach (var (kind, _, opt) in PresetBottom.GetPresetTemplates())
                 {
                     var btn = SharedUIComponents.CreateStandardButton(PresetBottom.GetEnumDescription(kind));
                     btn.Width = 100;
                     btn.Click += (_, _) =>
                     {
-                        _viewModel.TargetKeys = (int)options.TargetKeys.Value;
-                        _viewModel.TransformSpeed = options.TransformSpeed.Value;
-                        _viewModel.Seed = options.Seed;
+                        _viewModel.TargetKeys = (int)opt.TargetKeys.Value;
+                        _viewModel.MaxKeys = (int)opt.MaxKeys.Value;
+                        _viewModel.MinKeys = (int)opt.MinKeys.Value;
+                        _viewModel.TransformSpeed = opt.TransformSpeed.Value;
+                        _viewModel.Seed = opt.Seed;
+                        _viewModel.KeySelection = opt.SelectedKeyFlags ?? KeySelectionFlags.None; 
                     };
                     builtinPresetsPanel.Children.Add(btn);
                 }

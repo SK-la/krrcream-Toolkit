@@ -1,12 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.Windows;
 using System.Reflection;
+using System.Windows;
 using krrTools.Bindable;
 using krrTools.Configuration;
 using krrTools.Core;
-using krrTools.Localization;
-using OsuParsers.Beatmaps;
+using Microsoft.Extensions.Logging;
 using OsuParsers.Decoders;
 
 namespace krrTools.Tools.Preview;
@@ -20,9 +17,9 @@ public class PreviewViewModel : ReactiveViewModelBase
     [Inject] protected IEventBus EventBus { get; set; } = null!;
 
     // 响应式属性
-    private Bindable<FrameworkElement?> _originalVisual = new();
-    private Bindable<FrameworkElement?> _convertedVisual = new();
-    private Bindable<string> _title = new(string.Empty);
+    private readonly Bindable<FrameworkElement?> _originalVisual = new();
+    private readonly Bindable<FrameworkElement?> _convertedVisual = new();
+    private readonly Bindable<string> _title = new(string.Empty);
 
     private ConverterEnum? _currentTool;
 
@@ -72,6 +69,13 @@ public class PreviewViewModel : ReactiveViewModelBase
     /// </summary>
     private void OnSettingsChanged(SettingsChangedEvent settingsEvent)
     {
+        // // Debug日志：显示所有发生的设置变化，由于异步通知管线，这里不生效
+        // Logger.WriteLine(LogLevel.Debug, "[SettingsChanged] Tool: {0}, Property: {1}, Type: {2}, Value: {3}", 
+        //     _currentTool?.ToString() ?? "None", 
+        //     settingsEvent.PropertyName ?? "null", 
+        //     settingsEvent.SettingsType?.Name ?? "Unknown", 
+        //     settingsEvent.NewValue?.ToString() ?? "null");
+
         // 只处理当前工具的设置变化
         if (_currentTool == null || settingsEvent.SettingsType == null) return;
         ConverterEnum current = _currentTool.Value;
@@ -94,7 +98,7 @@ public class PreviewViewModel : ReactiveViewModelBase
                 ConverterEnum.KRRLN => "KRRLN",
                 _ => "未知"
             };
-            Console.WriteLine($"[{moduleName}模块]-{settingsEvent.PropertyName}-变更为{settingsEvent.NewValue}");
+            Logger.WriteLine(LogLevel.Information, "[{0}模块]-{1}-变更为{2}", moduleName, settingsEvent.PropertyName, settingsEvent.NewValue);
         }
 
         // 直接调用RefreshConverted，在测试环境中Dispatcher可能不可用
@@ -122,25 +126,6 @@ public class PreviewViewModel : ReactiveViewModelBase
     private void OnBeatmapChanged(BeatmapChangedEvent e)
     {
         LoadPreviewPath(e.FilePath);
-
-        // 使用Dispatcher确保在UI线程上执行，避免跨线程访问错误
-        Application.Current.Dispatcher.Invoke(() =>
-        {
-            switch (e.ChangeType)
-            {
-                case BeatmapChangeType.FromMonitoring:
-                    Title = $"[监听] {e.FileName}";
-                    break;
-
-                case BeatmapChangeType.FromDropZone:
-                    Title = $"[拖入] {e.FileName}";
-                    break;
-
-                default:
-                    Title = Strings.DropHint.GetLocalizedString();
-                    break;
-            }
-        });
     }
 
     /// <summary>
@@ -155,7 +140,6 @@ public class PreviewViewModel : ReactiveViewModelBase
         else
         {
             ResetPreview();
-            RefreshOriginal();
         }
     }
 
@@ -176,7 +160,7 @@ public class PreviewViewModel : ReactiveViewModelBase
         RefreshOriginal();
         RefreshConverted();
         
-        // TODO: 重置触发，拖拽区也要重置。
+        // 重置后，拖拽区要重置吗？
     }
 
     public void SetProcessor(IPreviewProcessor? processor)
@@ -222,11 +206,11 @@ public class PreviewViewModel : ReactiveViewModelBase
                 OriginalVisual = Processor.BuildOriginalVisual(beatmap);
 
             var duration = DateTime.Now - decodeStartTime;
-            Console.WriteLine($"[PreviewViewModel] 原始预览刷新完成，耗时: {duration.TotalMilliseconds:F1}ms");
+            Logger.WriteLine(LogLevel.Debug, "[PreviewViewModel] 原始预览刷新完成，耗时: {0:F1}ms", duration.TotalMilliseconds);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[PreviewViewModel] RefreshOriginal failed: {ex.Message}");
+            Logger.WriteLine(LogLevel.Error, "[PreviewViewModel] RefreshOriginal failed: {0}", ex.Message);
         }
     }
 
@@ -260,11 +244,11 @@ public class PreviewViewModel : ReactiveViewModelBase
                 ConvertedVisual = Processor.BuildConvertedVisual(beatmap);
 
             var duration = DateTime.Now - decodeStartTime;
-            Console.WriteLine($"[PreviewViewModel] 转换后预览刷新完成，耗时: {duration.TotalMilliseconds:F1}ms");
+            Logger.WriteLine(LogLevel.Information, "[PreviewViewModel] 转换后预览刷新完成，耗时: {0:F1}ms", duration.TotalMilliseconds);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[PreviewViewModel] RefreshConverted failed: {ex.Message}");
+            Logger.WriteLine(LogLevel.Error, "[PreviewViewModel] RefreshConverted failed: {0}", ex.Message);
         }
     }
 }

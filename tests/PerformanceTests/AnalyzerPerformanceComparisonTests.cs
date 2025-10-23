@@ -25,14 +25,16 @@ public class PerformanceResult
     public int FileCount { get; set; }
     public double SpeedupRatio { get; set; } // 相对于基准的倍数
     public string PerformanceRating { get; set; } = ""; // 性能评级
+    public long PeakMemoryMB { get; set; } // 峰值内存增量(MB)
+    public double AverageMemoryMB { get; set; } // 平均内存增量(MB)
 }
 
 public class AnalyzerPerformanceComparisonTests : IDisposable
 {
     private readonly ITestOutputHelper _testOutputHelper;
 
-    // 统一的测试文件数量常量
-    private const int TestFileCount = 100;
+    // 统一的测试文件数量常量 - 用于模拟同样处理N个文件时的速度
+    private const int TestFileCount = 50;
 
     public AnalyzerPerformanceComparisonTests(ITestOutputHelper testOutputHelper)
     {
@@ -50,18 +52,17 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
     /// <summary>
     /// 以表格形式输出性能测试结果
     /// </summary>
-    private void OutputPerformanceTable(string testName, List<PerformanceResult> results,
-        string baselineAnalyzer = "Original")
+    private void OutputPerformanceTable(string testName, List<PerformanceResult> results)
     {
         _testOutputHelper.WriteLine($"\n=== {testName} 性能对比结果 ===");
         _testOutputHelper.WriteLine($"测试文件数量: {results.First().FileCount}");
 
         // 表格头部
         _testOutputHelper.WriteLine(
-            "┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐");
-        _testOutputHelper.WriteLine("│  分析器版本  │  总用时(ms)  │  平均用时(ms)│ 吞吐量(个/s) │   结果一致性  │   性能倍数   │   性能评级   │");
+            "┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐");
+        _testOutputHelper.WriteLine("│  分析器版本  │  总用时(ms)  │  平均用时(ms)│ 吞吐量(个/s) │   结果一致性  │   性能倍数   │   性能评级   │ 峰值内存(MB) │ 平均内存(MB) │");
         _testOutputHelper.WriteLine(
-            "├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤");
+            "├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤");
 
         // 表格内容
         foreach (var result in results.OrderBy(r => r.TotalTime))
@@ -70,19 +71,21 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
             var speedup = result.SpeedupRatio >= 1 ? $"{result.SpeedupRatio:F2}x" : $"{1 / result.SpeedupRatio:F2}x慢";
             var rating = GetPerformanceRating(result.SpeedupRatio);
 
-            _testOutputHelper.WriteLine("│ {0,-11} │ {1,11:F2} │ {2,11:F2} │ {3,11:F2} │ {4,11} │ {5,11} │ {6,11} │",
+            _testOutputHelper.WriteLine("│ {0,-11} │ {1,11:F2} │ {2,11:F2} │ {3,11:F2} │ {4,11} │ {5,11} │ {6,11} │ {7,11:F1} │ {8,11:F1} │",
                 result.AnalyzerName,
                 result.TotalTime.TotalMilliseconds,
                 result.AverageTime,
                 result.Throughput,
                 consistency,
                 speedup,
-                rating);
+                rating,
+                result.PeakMemoryMB,
+                result.AverageMemoryMB);
         }
 
         // 表格底部
         _testOutputHelper.WriteLine(
-            "└─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘");
+            "└─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘");
 
         // 总结信息
         var bestResult = results.OrderBy(r => r.TotalTime).First();
@@ -104,7 +107,6 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         _testOutputHelper.WriteLine($"\n📈 扩展预测:");
         _testOutputHelper.WriteLine($"• 平均吞吐量: {avgThroughput:F1} 个/秒");
         _testOutputHelper.WriteLine($"• 处理1000个文件预估时间: {estimatedTimeFor1000:F1} 秒");
-        _testOutputHelper.WriteLine($"• 处理10000个文件预估时间: {estimatedTimeFor1000 * 10:F1} 秒");
     }
 
     /// <summary>
@@ -138,7 +140,7 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         _testOutputHelper.WriteLine($"Loaded sample beatmap from: {Path.GetFileName(sampleFilePath)}");
 
         // 测试每个分析器的性能
-        var results = new Dictionary<string, (TimeSpan time, OsuAnalysisResult result)>();
+        var results = new Dictionary<string, (TimeSpan time, OsuAnalysisBasic result)>();
 
         // 测试原始版本
         var stopwatch = Stopwatch.StartNew();
@@ -146,17 +148,11 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         stopwatch.Stop();
         results["Original"] = (stopwatch.Elapsed, originalResult);
 
-        // 测试优化版本
-        stopwatch.Restart();
-        var optimizedResult = OptimizedAnalyzer.Analyze(sampleFilePath, sampleBeatmap);
-        stopwatch.Stop();
-        results["Optimized"] = (stopwatch.Elapsed, optimizedResult);
-
         // 测试异步版本
         stopwatch.Restart();
-        var asyncResult = await AsyncAnalyzer.AnalyzeAsync(sampleFilePath, sampleBeatmap);
+        var asyncBasicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(sampleBeatmap);
         stopwatch.Stop();
-        results["Async"] = (stopwatch.Elapsed, asyncResult);
+        results["Async"] = (stopwatch.Elapsed, asyncBasicInfo);
 
         // 验证结果一致性并创建性能结果
         var baseResult = results["Original"].result;
@@ -165,9 +161,7 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         foreach (var kvp in results)
         {
             var result = kvp.Value.result;
-            var isConsistent = Math.Abs(result.XXY_SR - baseResult.XXY_SR) < 0.01 &&
-                               Math.Abs(result.MaxKPS - baseResult.MaxKPS) < 0.01 &&
-                               baseResult.NotesCount == result.NotesCount;
+            var isConsistent = baseResult.NotesCount == result.NotesCount; // 基础信息一致性检查
 
             var perfResult = new PerformanceResult
             {
@@ -179,7 +173,9 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
                 FileCount = 1,
                 SpeedupRatio = results["Original"].time.TotalMilliseconds / kvp.Value.time.TotalMilliseconds,
                 PerformanceRating =
-                    GetPerformanceRating(results["Original"].time.TotalMilliseconds / kvp.Value.time.TotalMilliseconds)
+                    GetPerformanceRating(results["Original"].time.TotalMilliseconds / kvp.Value.time.TotalMilliseconds),
+                PeakMemoryMB = 0, // 单文件测试不监控内存
+                AverageMemoryMB = 0
             };
 
             performanceResults.Add(perfResult);
@@ -188,76 +184,7 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         // 输出表格形式的性能对比结果
         OutputPerformanceTable("单文件分析", performanceResults);
     }
-
-    [Fact]
-    public async Task CompareAnalyzerPerformance_BatchProcessing()
-    {
-        // 从TestOsuFile文件夹读取实际的osu文件
-        var testOsuFileDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "TestOsuFile");
-        var osuFiles = Directory.GetFiles(testOsuFileDir, "*.osu", SearchOption.TopDirectoryOnly);
-
-        if (osuFiles.Length == 0)
-        {
-            _testOutputHelper.WriteLine("No .osu files found in TestOsuFile directory. Skipping batch test.");
-            return;
-        }
-
-        // 读取第一个真实文件到内存中
-        var sampleFilePath = osuFiles.First();
-        var sampleBeatmap = BeatmapDecoder.Decode(sampleFilePath);
-        _testOutputHelper.WriteLine($"Loaded sample beatmap from: {Path.GetFileName(sampleFilePath)}");
-
-        // 模拟批量处理
-        const int batchSize = TestFileCount;
-
-        // 测试每个分析器的批量性能
-        var results = new Dictionary<string, TimeSpan>();
-
-        // 测试原始版本批量处理
-        var stopwatch = Stopwatch.StartNew();
-        for (var i = 0; i < batchSize; i++) OriginalAnalyzer.Analyze($"batch_{i}.osu", sampleBeatmap);
-        stopwatch.Stop();
-        results["Original"] = stopwatch.Elapsed;
-
-        // 测试优化版本批量处理
-        stopwatch.Restart();
-        for (var i = 0; i < batchSize; i++) OptimizedAnalyzer.Analyze($"batch_{i}.osu", sampleBeatmap);
-        stopwatch.Stop();
-        results["Optimized"] = stopwatch.Elapsed;
-
-        // 测试异步版本批量处理
-        stopwatch.Restart();
-        var asyncTasks = new List<Task>();
-        for (var i = 0; i < batchSize; i++) asyncTasks.Add(AsyncAnalyzer.AnalyzeAsync($"batch_{i}.osu", sampleBeatmap));
-        await Task.WhenAll(asyncTasks);
-        stopwatch.Stop();
-        results["Async"] = stopwatch.Elapsed;
-
-        // 创建性能结果（批量处理的结果一致性检查）
-        var performanceResults = new List<PerformanceResult>();
-        var originalTime = results["Original"];
-
-        foreach (var kvp in results)
-        {
-            var perfResult = new PerformanceResult
-            {
-                AnalyzerName = kvp.Key,
-                TotalTime = kvp.Value,
-                AverageTime = kvp.Value.TotalMilliseconds / batchSize,
-                Throughput = batchSize / kvp.Value.TotalSeconds,
-                ResultsConsistent = true, // 批量处理不检查结果一致性，假设都正确
-                FileCount = batchSize,
-                SpeedupRatio = originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds,
-                PerformanceRating = GetPerformanceRating(originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds)
-            };
-
-            performanceResults.Add(perfResult);
-        }
-
-        // 输出表格形式的批量性能对比结果
-        OutputPerformanceTable("批量顺序处理", performanceResults);
-    }
-
+    
     [Fact]
     public async Task CompareAnalyzerPerformance_RealisticScenario()
     {
@@ -274,7 +201,7 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         // 预加载所有谱面文件到内存中（模拟实际使用时的文件缓存）
         _testOutputHelper.WriteLine("Preloading beatmap files...");
         var preloadedBeatmaps = new List<(string filePath, Beatmap beatmap)>();
-        foreach (var file in osuFiles.Take(Math.Min(10, osuFiles.Length)))
+        foreach (var file in osuFiles.Take(Math.Min(TestFileCount, osuFiles.Length)))
             try
             {
                 var beatmap = BeatmapDecoder.Decode(file);
@@ -298,44 +225,87 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         foreach (var (_, beatmap) in preloadedBeatmaps.Take(1))
         {
             OriginalAnalyzer.Analyze("warmup.osu", beatmap);
-            OptimizedAnalyzer.Analyze("warmup.osu", beatmap);
-            await AsyncAnalyzer.AnalyzeAsync("warmup.osu", beatmap);
+            var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(beatmap);
+            var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(beatmap);
         }
 
         // 模拟实际使用场景：处理多个不同的谱面文件
-        const int iterations = 5; // 每个谱面处理多次，模拟批量操作
+        const int iterations = 2; // 每个谱面处理少量次数，更符合实际使用
 
         var results = new Dictionary<string, TimeSpan>();
+        var memoryResults = new Dictionary<string, (long peakMemoryMB, double averageMemoryMB)>();
+
+        // 记录测试开始时的内存基准
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        var baselineMemory = GC.GetTotalMemory(true);
+        var process = Process.GetCurrentProcess();
+        var baselineWorkingSet = process.WorkingSet64;
+
+        _testOutputHelper.WriteLine($"内存基准 - GC: {baselineMemory / 1024 / 1024}MB, 工作集: {baselineWorkingSet / 1024 / 1024}MB");
 
         // 测试原始版本 - 模拟实际使用
+        long peakMemoryOriginal = 0;
+        var memoryReadingsOriginal = new List<long>();
+
         var stopwatch = Stopwatch.StartNew();
         for (var iter = 0; iter < iterations; iter++)
+        {
             foreach (var (filePath, beatmap) in preloadedBeatmaps)
+            {
                 OriginalAnalyzer.Analyze(filePath, beatmap);
+
+                // 记录每次迭代的内存使用
+                var currentMemory = GC.GetTotalMemory(false);
+                memoryReadingsOriginal.Add(currentMemory);
+                peakMemoryOriginal = Math.Max(peakMemoryOriginal, currentMemory);
+            }
+        }
 
         stopwatch.Stop();
         results["Original"] = stopwatch.Elapsed;
 
-        // 测试优化版本 - 模拟实际使用
-        stopwatch.Restart();
-        for (var iter = 0; iter < iterations; iter++)
-            foreach (var (filePath, beatmap) in preloadedBeatmaps)
-                OptimizedAnalyzer.Analyze(filePath, beatmap);
+        var averageMemoryOriginal = memoryReadingsOriginal.Average();
+        memoryResults["Original"] = ((peakMemoryOriginal - baselineMemory) / 1024 / 1024,
+                                   (averageMemoryOriginal - baselineMemory) / 1024 / 1024.0);
 
-        stopwatch.Stop();
-        results["Optimized"] = stopwatch.Elapsed;
+        _testOutputHelper.WriteLine($"Original分析器内存 - 峰值增量: {memoryResults["Original"].peakMemoryMB}MB, 平均增量: {memoryResults["Original"].averageMemoryMB}MB");
+
+        // 强制GC清理Original分析器使用的内存
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
 
         // 测试异步版本 - 模拟实际使用
+        long peakMemoryAsync = 0;
+        var memoryReadingsAsync = new List<long>();
+
         stopwatch.Restart();
         for (var iter = 0; iter < iterations; iter++)
         {
-            var asyncTasks = preloadedBeatmaps.Select(item =>
-                AsyncAnalyzer.AnalyzeAsync(item.filePath, item.beatmap)).ToArray();
+            var asyncTasks = preloadedBeatmaps.Select(async item =>
+            {
+                var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(item.beatmap);
+                var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(item.beatmap);
+                return Task.CompletedTask;
+            }).ToArray();
+
+            // 并行执行所有任务
             await Task.WhenAll(asyncTasks);
+
+            // 记录并行执行后的内存使用
+            var currentMemory = GC.GetTotalMemory(false);
+            memoryReadingsAsync.Add(currentMemory);
+            peakMemoryAsync = Math.Max(peakMemoryAsync, currentMemory);
         }
 
         stopwatch.Stop();
         results["Async"] = stopwatch.Elapsed;
+
+        var averageMemoryAsync = memoryReadingsAsync.Average();
+        memoryResults["Async"] = ((peakMemoryAsync - baselineMemory) / 1024 / 1024,
+                                (averageMemoryAsync - baselineMemory) / 1024 / 1024.0);
+
+        _testOutputHelper.WriteLine($"Async分析器内存 - 峰值增量: {memoryResults["Async"].peakMemoryMB}MB, 平均增量: {memoryResults["Async"].averageMemoryMB}MB");
 
         // 计算实际的总文件处理数
         var totalFilesProcessed = preloadedBeatmaps.Count * iterations;
@@ -355,7 +325,9 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
                 ResultsConsistent = true, // 实际场景测试跳过一致性检查
                 FileCount = totalFilesProcessed,
                 SpeedupRatio = originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds,
-                PerformanceRating = GetPerformanceRating(originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds)
+                PerformanceRating = GetPerformanceRating(originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds),
+                PeakMemoryMB = memoryResults[kvp.Key].peakMemoryMB,
+                AverageMemoryMB = memoryResults[kvp.Key].averageMemoryMB
             };
 
             performanceResults.Add(perfResult);
@@ -376,9 +348,9 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         _testOutputHelper.WriteLine($"\n🚀 性能对比实际使用:");
         _testOutputHelper.WriteLine($"• 最佳吞吐量: {bestThroughput:F1} 个/秒");
         _testOutputHelper.WriteLine($"• 相当于每秒处理: {bestThroughput:F0} 个谱面");
-        _testOutputHelper.WriteLine($"• 1秒处理100个文件需要: {100.0 / bestThroughput:F2} 秒");
+        _testOutputHelper.WriteLine($"• 1秒处理{TestFileCount}个文件需要: {TestFileCount * 1.0 / bestThroughput:F2} 秒");
 
-        if (bestThroughput >= 50)
+        if (bestThroughput >= TestFileCount)
         {
             _testOutputHelper.WriteLine("• ✅ 达到实际使用预期性能水平");
         }
@@ -425,7 +397,7 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
 
         // 预加载谱面文件
         var preloadedBeatmaps = new List<(string filePath, Beatmap beatmap)>();
-        foreach (var file in osuFiles.Take(Math.Min(5, osuFiles.Length)))
+        foreach (var file in osuFiles.Take(Math.Min(TestFileCount, osuFiles.Length)))
             try
             {
                 var beatmap = BeatmapDecoder.Decode(file);
@@ -444,12 +416,12 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
 
         // 长时间预热 - 模拟Release模式下的JIT优化
         _testOutputHelper.WriteLine("Extended warmup phase (simulating Release mode JIT optimization)...");
-        for (var i = 0; i < 50; i++) // 50次预热迭代
+        for (var i = 0; i < 5; i++) // 减少预热迭代，更符合实际使用
             foreach (var (_, beatmap) in preloadedBeatmaps)
             {
                 OriginalAnalyzer.Analyze("warmup.osu", beatmap);
-                OptimizedAnalyzer.Analyze("warmup.osu", beatmap);
-                await AsyncAnalyzer.AnalyzeAsync("warmup.osu", beatmap);
+                var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(beatmap);
+                var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(beatmap);
             }
 
         // 强制GC以模拟稳定状态
@@ -458,7 +430,7 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         GC.Collect();
 
         // 高强度测试 - 模拟Release模式下的持续负载
-        const int testIterations = 20; // 增加测试迭代次数
+        const int testIterations = 3; // 减少迭代次数，更符合实际使用场景
         var results = new Dictionary<string, TimeSpan>();
 
         // 测试原始版本
@@ -470,21 +442,16 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
         stopwatch.Stop();
         results["Original"] = stopwatch.Elapsed;
 
-        // 测试优化版本
-        stopwatch.Restart();
-        for (var iter = 0; iter < testIterations; iter++)
-            foreach (var (filePath, beatmap) in preloadedBeatmaps)
-                OptimizedAnalyzer.Analyze(filePath, beatmap);
-
-        stopwatch.Stop();
-        results["Optimized"] = stopwatch.Elapsed;
-
         // 测试异步版本
         stopwatch.Restart();
         for (var iter = 0; iter < testIterations; iter++)
         {
-            var asyncTasks = preloadedBeatmaps.Select(item =>
-                AsyncAnalyzer.AnalyzeAsync(item.filePath, item.beatmap)).ToArray();
+            var asyncTasks = preloadedBeatmaps.Select(async item =>
+            {
+                var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(item.beatmap);
+                var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(item.beatmap);
+                return Task.CompletedTask;
+            }).ToArray();
             await Task.WhenAll(asyncTasks);
         }
 
@@ -508,7 +475,9 @@ public class AnalyzerPerformanceComparisonTests : IDisposable
                 ResultsConsistent = true,
                 FileCount = totalFilesProcessed,
                 SpeedupRatio = originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds,
-                PerformanceRating = GetPerformanceRating(originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds)
+                PerformanceRating = GetPerformanceRating(originalTime.TotalMilliseconds / kvp.Value.TotalMilliseconds),
+                PeakMemoryMB = 0, // Release模式测试不监控内存
+                AverageMemoryMB = 0
             };
 
             performanceResults.Add(perfResult);

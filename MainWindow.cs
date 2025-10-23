@@ -1,12 +1,13 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
+using System.IO.Compression;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Data;
+using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
+using krrTools.Beatmaps;
 using krrTools.Bindable;
 using krrTools.Configuration;
 using krrTools.Core;
@@ -21,10 +22,20 @@ using krrTools.Tools.Preview;
 using krrTools.UI;
 using krrTools.Utilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using OsuParsers.Decoders;
+using Wpf.Ui.Controls;
+using Binding = System.Windows.Data.Binding;
+using Control = System.Windows.Forms.Control;
 using Grid = Wpf.Ui.Controls.Grid;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using Point = System.Windows.Point;
 using Size = System.Windows.Size;
-using Wpf.Ui.Controls;
+using MessageBox = System.Windows.MessageBox;
+using MessageBoxButton = System.Windows.MessageBoxButton;
+using MessageBoxImage = System.Windows.MessageBoxImage;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using UserControl = System.Windows.Controls.UserControl;
 
 namespace krrTools
 {
@@ -38,6 +49,9 @@ namespace krrTools
         private PreviewViewDual _previewDual = null!;
         private ContentControl _currentSettingsContainer = null!;
         private readonly StateBarManager _StateBarManager;
+
+        // 全局快捷键管理器
+        private ConversionHotkeyManager? _conversionHotkeyManager;
 
         // Snackbar服务
         private SnackbarPresenter _snackbarPresenter = null!;
@@ -119,6 +133,112 @@ namespace krrTools
 
             // 添加窗口关闭时的资源清理
             Closed += MainWindow_Closed;
+        }
+
+        private void InitializeGlobalHotkeys()
+        {
+            _conversionHotkeyManager = new ConversionHotkeyManager(ExecuteConvertWithModule, this);
+            
+            // 订阅监听状态变化
+            var eventBus = App.Services.GetService(typeof(IEventBus)) as IEventBus;
+            eventBus?.Subscribe<MonitoringEnabledChangedEvent>(OnMonitoringEnabledChanged);
+
+            // 如果监听已启用，注册快捷键
+            var globalSettings = BaseOptionsManager.GetGlobalSettings();
+            if (globalSettings.MonitoringEnable.Value)
+            {
+                _conversionHotkeyManager.RegisterHotkeys(globalSettings);
+            }
+        }
+
+        private void ExecuteConvertWithModule(ConverterEnum converter)
+        {
+            // 获取监听ViewModel中的当前谱面路径, 变量是持久化的，所以这里一定有值
+            string beatmapPath = _listenerControlInstance.ViewModel.MonitorOsuFilePath;
+
+            try
+            {
+                // 解码谱面，并确保是有效的 Mania 谱面
+                var beatmap = BeatmapDecoder.Decode(beatmapPath).GetManiaBeatmap();
+                if (beatmap == null)
+                {
+                    Logger.WriteLine(LogLevel.Error,$"{beatmapPath} is not a supported beatmap. And Skipped.");
+                    return;
+                }
+                
+                // 初始化转换服务
+                var moduleManager = App.Services.GetService(typeof(IModuleManager)) as IModuleManager;
+                var transformationService = new BeatmapTransformationService(moduleManager!);
+
+                // 使用转换服务
+                var transformedBeatmap = transformationService.TransformBeatmap(beatmap, converter);
+                
+                // 保存转换后谱面
+                var outputPath = transformedBeatmap.GetOutputOsuFileName();
+                var outputDir = Path.GetDirectoryName(beatmapPath);
+                var fullOutputPath = Path.Combine(outputDir!, outputPath);
+                transformedBeatmap.Save(fullOutputPath);
+
+                // 打包成.osz并打开
+                var directoryPath = Path.GetDirectoryName(fullOutputPath);
+                var directoryName = Path.GetFileName(directoryPath);
+                if (directoryPath == null || directoryName == null)
+                    throw new ArgumentException("Invalid path structure");
+
+                var zipFilePath = Path.Combine(directoryPath, $"{directoryName}.osz");
+
+                if (File.Exists(zipFilePath)) File.Delete(zipFilePath);
+
+                using (var archive = ZipFile.Open(zipFilePath, ZipArchiveMode.Create))
+                {
+                    archive.CreateEntryFromFile(fullOutputPath, Path.GetFileName(fullOutputPath));
+                }
+                File.Delete(fullOutputPath);
+
+                Console.WriteLine($"已创建 {zipFilePath}");
+
+                var songsPath = BaseOptionsManager.GetGlobalSettings().SongsPath.Value;
+                var osuDir = Path.GetDirectoryName(songsPath);
+                if (osuDir == null)
+                    throw new InvalidOperationException("Invalid songs path");
+
+                string osuExe = Path.Combine(osuDir, "osu!.exe");
+                if (!File.Exists(osuExe))
+                    throw new InvalidOperationException("osu!.exe not found");
+
+                Process.Start(osuExe, zipFilePath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Conversion failed: {ex.Message}", "Conversion Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OnMonitoringEnabledChanged(MonitoringEnabledChangedEvent evt)
+        {
+            if (_conversionHotkeyManager == null) return;
+
+            if (evt.NewValue)
+            {
+                // 监听启用，注册快捷键
+                var globalSettings = BaseOptionsManager.GetGlobalSettings();
+                _conversionHotkeyManager.RegisterHotkeys(globalSettings);
+            }
+            else
+            {
+                // 监听禁用，注销快捷键
+                _conversionHotkeyManager.UnregisterAllHotkeys();
+            }
+        }
+
+        private Func<IToolOptions> GetOptionsProviderForConverter(ConverterEnum converter)
+        {
+            return _optionsProviders.GetValueOrDefault(converter, () => new N2NCOptions());
+        }
+
+        private object? GetViewModelForConverter(ConverterEnum converter)
+        {
+            return _viewModelGetters.GetValueOrDefault(converter, () => null).Invoke();
         }
 
         private void InitializeProviders()
@@ -276,13 +396,11 @@ namespace krrTools
             {
                 SetTopmost(true);
                 statusBarControl.TopmostToggle.Content = new SymbolIcon { Symbol = SymbolRegular.Pin20 };
-                statusBarControl.TopmostToggle.ToolTip = "取消置顶";
             };
             statusBarControl.TopmostToggle.Unchecked += (_, _) =>
             {
                 SetTopmost(false);
                 statusBarControl.TopmostToggle.Content = new SymbolIcon { Symbol = SymbolRegular.PinOff20 };
-                statusBarControl.TopmostToggle.ToolTip = "置顶窗口";
             };
 
             // 监听冻结状态
@@ -290,17 +408,16 @@ namespace krrTools
             {
                 Dispatcher.Invoke(() =>
                 {
+                    // TODO: 考虑是否要暂停预览刷新、监听等，也要评估复杂程度
                     if (frozen)
                     {
                         statusBarControl.RealTimeToggle.IsEnabled = false;
                         statusBarControl.TopmostToggle.IsEnabled = false;
-                        // TODO: 暂停预览刷新、监听等
                     }
                     else
                     {
                         statusBarControl.RealTimeToggle.IsEnabled = true;
                         statusBarControl.TopmostToggle.IsEnabled = true;
-                        // TODO: 恢复预览刷新、监听等
                     }
                 });
             });
@@ -341,7 +458,10 @@ namespace krrTools
             {
                 StatusBarControl.ApplyThemeSettings();
                 InvalidateVisual(); // 强制重新绘制以应用主题
-            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+                // 初始化全局快捷键
+                InitializeGlobalHotkeys();
+            }), DispatcherPriority.ApplicationIdle);
         }
 
 
@@ -547,14 +667,14 @@ namespace krrTools
             var insertIndex = MainTabControl.Items.IndexOf(tab);
             MainTabControl.Items.Remove(tab);
 
-            var followTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+            var followTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
             followTimer.Tick += (_, _) =>
             {
                 var p = System.Windows.Forms.Cursor.Position;
                 win.Left = p.X - 40;
                 win.Top = p.Y - 10;
-                if ((System.Windows.Forms.Control.MouseButtons & System.Windows.Forms.MouseButtons.Left) !=
-                    System.Windows.Forms.MouseButtons.Left)
+                if ((Control.MouseButtons & MouseButtons.Left) !=
+                    MouseButtons.Left)
                 {
                     var tabPanel = FindVisualChild<TabPanel>(MainTabControl);
                     Rect headerRect;
@@ -704,21 +824,7 @@ namespace krrTools
             }
         }
 
-        #region 辅助方法
-
-        private Func<IToolOptions> GetOptionsProviderForConverter(ConverterEnum converter)
-        {
-            return _optionsProviders.TryGetValue(converter, out var provider) ? provider : () => new N2NCOptions();
-        }
-
-        private object? GetViewModelForConverter(ConverterEnum converter)
-        {
-            return _viewModelGetters.TryGetValue(converter, out var getter) ? getter() : null;
-        }
-
-        /// <summary>
-        /// 窗口关闭时的资源清理
-        /// </summary>
+        // 处理窗口关闭时的资源清理
         private void MainWindow_Closed(object? sender, EventArgs e)
         {
             // 清理预览ViewModel的资源
@@ -737,9 +843,11 @@ namespace krrTools
             if (_krrLnTransformerInstance.DataContext is IDisposable krrlnDisposable)
                 krrlnDisposable.Dispose();
 
+            // // 清理KRRLVAnalysisViewModel的资源
+            // if (LVCalSettingsHost?.DataContext is IDisposable lvAnalysisDisposable)
+            //     lvAnalysisDisposable.Dispose();
+
             // 清理其他可能需要释放的资源
         }
-
-        #endregion
     }
 }

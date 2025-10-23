@@ -29,15 +29,9 @@ namespace krrTools.Tools.DPtool
             // 处理约束逻辑，与原SetupPropertyConstraints方法相同
             switch (e.PropertyName)
             {
-                case nameof(Options.SingleSideKeyCount):
-                    // 约束逻辑：确保SingleSideKeyCount在合理范围内
-                    if (Options.SingleSideKeyCount.Value.HasValue)
-                    {
-                        if (Options.SingleSideKeyCount.Value < 1) Options.SingleSideKeyCount.Value = 1;
-                        if (Options.SingleSideKeyCount.Value > 12) Options.SingleSideKeyCount.Value = 12;
-                    }
+                case nameof(Options.ModifyKeys):
+                    OnPropertyChanged(nameof(ModifyKeys));
                     break;
-
                 case nameof(Options.LMinKeys):
                     // 约束逻辑：LMinKeys不能大于LMaxKeys
                     if (Options.LMinKeys.Value > Options.LMaxKeys.Value)
@@ -65,12 +59,12 @@ namespace krrTools.Tools.DPtool
         }
 
         // 公开属性 - 响应式架构，与N2NC保持一致
-        public double? SingleSideKeyCount
+        public double? ModifyKeys
         {
-            get => Options.SingleSideKeyCount.Value;
-            set => Options.SingleSideKeyCount.Value = value;
+            get => Options.ModifyKeys.Value;
+            set => Options.ModifyKeys.Value = value;
         }
-
+        
         public bool LMirror
         {
             get => Options.LMirror.Value;
@@ -114,7 +108,6 @@ namespace krrTools.Tools.DPtool
         public IToolOptions GetPreviewOptions()
         {
             var previewOptions = new DPToolOptions();
-            previewOptions.SingleSideKeyCount.Value = Options.SingleSideKeyCount.Value;
             previewOptions.LMirror.Value = Options.LMirror.Value;
             previewOptions.LDensity.Value = Options.LDensity.Value;
             previewOptions.LRemove.Value = Options.LRemove.Value;

@@ -11,6 +11,9 @@ namespace krrTools.Tests;
 /// </summary>
 public static class STATestHelper
 {
+    private static Application? _application;
+    private static readonly object _applicationLock = new();
+
     /// <summary>
     /// 在STA线程中运行测试方法
     /// </summary>
@@ -21,7 +24,14 @@ public static class STATestHelper
         {
             try
             {
-                if (Application.Current == null) new Application();
+                // 确保只有一个Application实例
+                lock (_applicationLock)
+                {
+                    if (_application == null)
+                    {
+                        _application = new Application();
+                    }
+                }
                 testAction();
             }
             catch (Exception ex)
@@ -47,7 +57,8 @@ public static class STATestHelper
         {
             try
             {
-                if (Application.Current == null) new Application();
+                if (Application.Current == null) 
+                    new Application();
                 await testAction();
             }
             catch (Exception ex)
