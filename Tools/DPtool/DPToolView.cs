@@ -16,7 +16,8 @@ namespace krrTools.Tools.DPtool
 
         public event EventHandler? SettingsChanged;
 
-        public DPToolView() : base(ConverterEnum.DP)
+        public DPToolView()
+            : base(ConverterEnum.DP)
         {
             _viewModel = new DPToolViewModel(Options);
             DataContext = _viewModel;
@@ -27,21 +28,21 @@ namespace krrTools.Tools.DPtool
         {
             // 创建模板化控件，但保持自定义布局
             // var modifyKeysCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.ModifySingleSideKeyCount);
-            var keysSlider = SettingsBinder.CreateTemplatedSlider(_viewModel.Options, o => o.SingleSideKeyCount);
+            UIElement keysSlider = SettingsBinder.CreateTemplatedSlider(_viewModel.Options, o => o.SingleSideKeyCount);
 
-            var lMirrorCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.LMirror);
-            var lDensityCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.LDensity);
-            var lRemoveCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.LRemove);
-            var lMaxKeysSlider = SettingsBinder.CreateTemplatedSlider(_viewModel.Options, o => o.LMaxKeys);
-            var lMinKeysSlider = SettingsBinder.CreateTemplatedSliderWithDynamicMax(_viewModel.Options, o => o.LMinKeys, 
-                _viewModel, nameof(_viewModel.LMinKeysMaximum));
+            FrameworkElement lMirrorCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.LMirror);
+            FrameworkElement lDensityCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.LDensity);
+            FrameworkElement lRemoveCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.LRemove);
+            UIElement lMaxKeysSlider = SettingsBinder.CreateTemplatedSlider(_viewModel.Options, o => o.LMaxKeys);
+            UIElement lMinKeysSlider = SettingsBinder.CreateTemplatedSliderWithDynamicMax(_viewModel.Options, o => o.LMinKeys,
+                                                                                          _viewModel, nameof(_viewModel.LMinKeysMaximum));
 
-            var rMirrorCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.RMirror);
-            var rDensityCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.RDensity);
-            var rRemoveCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.RRemove);
-            var rMaxKeysSlider = SettingsBinder.CreateTemplatedSlider(_viewModel.Options, o => o.RMaxKeys);
-            var rMinKeysSlider = SettingsBinder.CreateTemplatedSliderWithDynamicMax(_viewModel.Options, o => o.RMinKeys, 
-                _viewModel, nameof(_viewModel.RMinKeysMaximum));
+            FrameworkElement rMirrorCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.RMirror);
+            FrameworkElement rDensityCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.RDensity);
+            FrameworkElement rRemoveCheckBox = SettingsBinder.CreateTemplatedControl(_viewModel.Options, o => o.RRemove);
+            UIElement rMaxKeysSlider = SettingsBinder.CreateTemplatedSlider(_viewModel.Options, o => o.RMaxKeys);
+            UIElement rMinKeysSlider = SettingsBinder.CreateTemplatedSliderWithDynamicMax(_viewModel.Options, o => o.RMinKeys,
+                                                                                          _viewModel, nameof(_viewModel.RMinKeysMaximum));
 
             // Placeholder keys panel
             // var keysPanel = new StackPanel { Margin = new Thickness(0, 0, 0, 15) };
@@ -52,7 +53,7 @@ namespace krrTools.Tools.DPtool
             // Left
             var leftLabel = new TextBlock { FontSize = UIConstants.HeaderFontSize, FontWeight = FontWeights.Bold };
             leftLabel.SetBinding(TextBlock.TextProperty,
-                new Binding("Value") { Source = Strings.DPLeftLabel.GetLocalizedString() });
+                                 new Binding("Value") { Source = Strings.DPLeftLabel.GetLocalizedString() });
             lMirrorCheckBox.HorizontalAlignment = HorizontalAlignment.Left;
             lDensityCheckBox.HorizontalAlignment = HorizontalAlignment.Left;
             lRemoveCheckBox.HorizontalAlignment = HorizontalAlignment.Left;
@@ -76,7 +77,7 @@ namespace krrTools.Tools.DPtool
             // Right
             var rightLabel = new TextBlock { FontSize = UIConstants.HeaderFontSize, FontWeight = FontWeights.Bold };
             rightLabel.SetBinding(TextBlock.TextProperty,
-                new Binding("Value") { Source = Strings.DPRightLabel.GetLocalizedString() });
+                                  new Binding("Value") { Source = Strings.DPRightLabel.GetLocalizedString() });
             rMirrorCheckBox.HorizontalAlignment = HorizontalAlignment.Left;
             rDensityCheckBox.HorizontalAlignment = HorizontalAlignment.Left;
             rRemoveCheckBox.HorizontalAlignment = HorizontalAlignment.Left;
@@ -115,27 +116,27 @@ namespace krrTools.Tools.DPtool
             grid.Children.Add(separator);
             grid.Children.Add(rightPanel);
 
-            var presetInner = PresetPanelFactory.CreatePresetPanel(nameof(ConverterEnum.DP), () => _viewModel.Options,
-                (opt) =>
-                {
-                    if (opt == null) return;
-                    var target = _viewModel.Options;
-                    target.SingleSideKeyCount.Value = opt.SingleSideKeyCount.Value;
+            FrameworkElement presetInner = PresetPanelFactory.CreatePresetPanel(nameof(ConverterEnum.DP), () => _viewModel.Options,
+                                                                                (opt) =>
+                                                                                {
+                                                                                    if (opt == null) return;
+                                                                                    DPToolOptions target = _viewModel.Options;
+                                                                                    target.SingleSideKeyCount.Value = opt.SingleSideKeyCount.Value;
 
-                    target.LMirror.Value = opt.LMirror.Value;
-                    target.LDensity.Value = opt.LDensity.Value;
-                    target.LMaxKeys.Value = opt.LMaxKeys.Value;
-                    target.LMinKeys.Value = opt.LMinKeys.Value;
-                    target.LRemove.Value = opt.LRemove.Value;
+                                                                                    target.LMirror.Value = opt.LMirror.Value;
+                                                                                    target.LDensity.Value = opt.LDensity.Value;
+                                                                                    target.LMaxKeys.Value = opt.LMaxKeys.Value;
+                                                                                    target.LMinKeys.Value = opt.LMinKeys.Value;
+                                                                                    target.LRemove.Value = opt.LRemove.Value;
 
-                    target.RMirror.Value = opt.RMirror.Value;
-                    target.RDensity.Value = opt.RDensity.Value;
-                    target.RMaxKeys.Value = opt.RMaxKeys.Value;
-                    target.RMinKeys.Value = opt.RMinKeys.Value;
-                    target.RRemove.Value = opt.RRemove.Value;
-                });
+                                                                                    target.RMirror.Value = opt.RMirror.Value;
+                                                                                    target.RDensity.Value = opt.RDensity.Value;
+                                                                                    target.RMaxKeys.Value = opt.RMaxKeys.Value;
+                                                                                    target.RMinKeys.Value = opt.RMinKeys.Value;
+                                                                                    target.RRemove.Value = opt.RRemove.Value;
+                                                                                });
 
-            var presetsPanel =
+            FrameworkElement presetsPanel =
                 SharedUIComponents.CreateLabeledRow(Strings.PresetsLabel, presetInner, new Thickness(0, 0, 0, 10));
 
             // Root stack
@@ -158,5 +159,4 @@ namespace krrTools.Tools.DPtool
             SettingsChanged?.Invoke(this, EventArgs.Empty);
         }
     }
-
 }

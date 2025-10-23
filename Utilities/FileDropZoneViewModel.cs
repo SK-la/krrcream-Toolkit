@@ -6,37 +6,46 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
+using krrTools.Beatmaps;
 using krrTools.Bindable;
 using krrTools.Configuration;
 using krrTools.Localization;
 using krrTools.Tools.Preview;
+using Microsoft.Extensions.Logging;
+using OsuParsers.Beatmaps;
 using OsuParsers.Decoders;
 
 namespace krrTools.Utilities
 {
     public class FileDropZoneViewModel : INotifyPropertyChanged
     {
-        private FileSource _currentSource = FileSource.None;
-        private string[]? _stagedPaths;
-        private string? _backgroundPath;
-        private string? _lastLoadedFile;
+        private readonly DynamicLocalizedString _dropFilesHintLocalized = new DynamicLocalizedString(Strings.DropFilesHint);
+
+        // 本地化
+        private readonly DynamicLocalizedString _dropHintLocalized = new DynamicLocalizedString(Strings.DropHint);
+        private readonly DynamicLocalizedString _droppedPrefixLocalized = new DynamicLocalizedString(Strings.DroppedPrefix);
 
         private readonly FileDispatcher _fileDispatcher;
+        private readonly DynamicLocalizedString _listenedPrefixLocalized = new DynamicLocalizedString(Strings.ListenedPrefix);
+        private string? _backgroundPath;
+        private FileSource _currentSource = FileSource.None;
 
-        // 公共属性注入事件总线，便于设置和获取
-        [Inject]
-        public IEventBus EventBus
-        {
-            get => _eventBus;
-            set
-            {
-                _eventBus = value;
-                // 在EventBus设置后订阅事件
-                _eventBus.Subscribe<BeatmapChangedEvent>(OnBeatmapChanged);
-                _eventBus.Subscribe<MonitoringEnabledChangedEvent>(OnMonitoringEnabledChanged);
-            }
-        }
+        // 属性
+        private string _displayText = string.Empty;
+
         private IEventBus _eventBus = null!;
+
+        private bool _isConversionEnabled;
+
+        // 进度相关属性
+        private bool _isProcessing;
+        private bool _isSingleFile;
+        private string? _lastLoadedFile;
+
+        private int _progressMaximum = 100;
+
+        private int _progressValue;
+        private string[]? _stagedPaths;
 
         // 依赖注入 - 构造函数
         public FileDropZoneViewModel(FileDispatcher fileDispatcher)
@@ -52,6 +61,8 @@ namespace krrTools.Utilities
                     IsProcessing = false;
                     ProgressValue = 0;
                     ProgressMaximum = 100;
+                    // 转换完成后清除拖拽状态，除单文件外
+                    if (!_isSingleFile) SetFiles(null);
                 }
                 else
                 {
@@ -59,40 +70,50 @@ namespace krrTools.Utilities
                     ProgressMaximum = total;
                 }
             };
+
+            // 初始化显示文字
+            UpdateDisplayText();
+
+            // 订阅语言切换事件
+            LocalizationService.LanguageChanged += OnLanguageChanged;
+        }
+
+        // 公共属性注入事件总线，便于设置和获取
+        [Inject]
+        public IEventBus EventBus
+        {
+            get => _eventBus;
+            set
+            {
+                _eventBus = value;
+                // 在EventBus设置后订阅事件
+                _eventBus.Subscribe<BeatmapChangedEvent>(OnBeatmapChanged);
+                _eventBus.Subscribe<MonitoringEnabledChangedEvent>(OnMonitoringEnabledChanged);
+            }
         }
 
         // UI 相关属性
         public PreviewViewDual? PreviewDual { get; set; }
         public Func<ConverterEnum>? GetActiveTabTag { get; set; }
 
-        // 本地化
-        private readonly DynamicLocalizedString _dropHintLocalized = new(Strings.DropHint);
-        private readonly DynamicLocalizedString _dropFilesHintLocalized = new(Strings.DropFilesHint);
-
-        // 属性
-        private string _displayText = string.Empty;
         public string DisplayText
         {
             get => _displayText;
             private set => SetProperty(ref _displayText, value);
         }
 
-        private bool _isConversionEnabled;
         public bool IsConversionEnabled
         {
             get => _isConversionEnabled;
             private set => SetProperty(ref _isConversionEnabled, value);
         }
 
-        // 进度相关属性
-        private bool _isProcessing;
         public bool IsProcessing
         {
             get => _isProcessing;
             set => SetProperty(ref _isProcessing, value);
         }
 
-        private int _progressValue;
         public int ProgressValue
         {
             get => _progressValue;
@@ -107,7 +128,6 @@ namespace krrTools.Utilities
             }
         }
 
-        private int _progressMaximum = 100;
         public int ProgressMaximum
         {
             get => _progressMaximum;
@@ -146,19 +166,21 @@ namespace krrTools.Utilities
             }
         }
 
+        public event PropertyChangedEventHandler? PropertyChanged;
+
         public event EventHandler<string[]>? FilesDropped;
 
         public void SetFiles(string[]? files, FileSource source = FileSource.Dropped)
         {
-            // TODO: 需要梳理
-            var oldSource = _currentSource;
+            FileSource oldSource = _currentSource;
             _stagedPaths = files;
+            _isSingleFile = files?.Length == 1;
             _backgroundPath = null; // Will be determined later
             _currentSource = files is { Length: > 0 } ? source : FileSource.None;
-            
+
             // 发布状态变化事件
             EventBus.Publish(new FileSourceChangedEvent(oldSource, _currentSource, _stagedPaths));
-            
+
             UpdateDisplayText();
             IsConversionEnabled = _stagedPaths is { Length: > 0 };
             LoadPreviewIfAvailable();
@@ -170,75 +192,89 @@ namespace krrTools.Utilities
             if (_stagedPaths is { Length: > 0 } && PreviewDual != null && _stagedPaths[0] != _lastLoadedFile)
             {
                 _lastLoadedFile = _stagedPaths[0];
+
                 try
                 {
-                    PreviewDual.LoadPreview(_stagedPaths[0]);
-                    
+                    // 只在用户拖拽文件时主动加载预览，监听模式由PreviewViewModel处理
+                    if (_currentSource == FileSource.Dropped) PreviewDual.LoadPreview(_stagedPaths[0]);
+
                     if (string.IsNullOrEmpty(_backgroundPath))
                     {
-                        var beatmap = BeatmapDecoder.Decode(_stagedPaths[0]);
+                        Beatmap? beatmap = BeatmapDecoder.Decode(_stagedPaths[0]);
+
                         if (beatmap != null && !string.IsNullOrWhiteSpace(beatmap.EventsSection.BackgroundImage))
                         {
-                            _backgroundPath = Path.Combine(Path.GetDirectoryName(_stagedPaths[0])!, beatmap.EventsSection.BackgroundImage);
+                            _backgroundPath = Path.Combine(Path.GetDirectoryName(_stagedPaths[0])!,
+                                                           beatmap.EventsSection.BackgroundImage);
                         }
                     }
-                    
-                    if (!string.IsNullOrEmpty(_backgroundPath))
-                    {
-                        PreviewDual.LoadBackgroundBrush(_backgroundPath);
-                    }
+
+                    if (!string.IsNullOrEmpty(_backgroundPath)) PreviewDual.LoadBackgroundBrush(_backgroundPath);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load preview for {_stagedPaths[0]}: {ex.Message}");
+                    Logger.WriteLine(LogLevel.Error, "Failed to load preview for {0}: {1}", _stagedPaths[0],
+                                     ex.Message);
                 }
             }
         }
 
         public void ConvertFiles()
         {
-            Console.WriteLine($"[DEBUG] ConvertFiles called. _stagedPaths: {_stagedPaths?.Length ?? 0}, GetActiveTabTag: {GetActiveTabTag}");
+            Logger.WriteLine(LogLevel.Debug,
+                             "[FileDropZone] ConvertFiles called. _stagedPaths: {0}, GetActiveTabTag: {1}",
+                             _stagedPaths?.Length ?? 0, GetActiveTabTag?.Invoke().ToString() ?? "null");
+
             if (_stagedPaths is { Length: > 0 } && GetActiveTabTag != null)
             {
-                var activeTab = GetActiveTabTag();
-                Console.WriteLine($"[DEBUG] ActiveTabTag: {activeTab}");
+                // 在UI层过滤非Mania谱面
+                string[] filteredPaths = _stagedPaths.Where(BeatmapFileHelper.IsManiaBeatmap).ToArray();
+                int skippedCount = _stagedPaths.Length - filteredPaths.Length;
+                if (skippedCount > 0)
+                    Logger.WriteLine(LogLevel.Information, "[FileDropZone] UI层过滤跳过 {0} 个非Mania文件", skippedCount);
+
+                ConverterEnum activeTab = GetActiveTabTag();
+                Logger.WriteLine(LogLevel.Debug, "[FileDropZone] ActiveTabTag: {0}", activeTab);
 
                 // 开始处理
                 IsProcessing = true;
                 ProgressValue = 0;
-                ProgressMaximum = _stagedPaths.Length;
+                ProgressMaximum = filteredPaths.Length;
 
                 _fileDispatcher.ActiveTabTag = activeTab;
-                _fileDispatcher.ConvertFiles(_stagedPaths);
+                _fileDispatcher.ConvertFiles(filteredPaths);
             }
             else
             {
-                Console.WriteLine($"[DEBUG] ConvertFiles skipped. Has files: {_stagedPaths is { Length: > 0 }}, Has GetActiveTabTag: {GetActiveTabTag != null}");
+                Logger.WriteLine(LogLevel.Debug,
+                                 "[FileDropZone] ConvertFiles skipped. Has files: {0}, Has GetActiveTabTag: {1}",
+                                 _stagedPaths is { Length: > 0 }, GetActiveTabTag != null);
             }
         }
 
         public List<string> CollectOsuFiles(string[] items)
         {
             var osuFiles = new List<string>();
-            foreach (var item in items)
+
+            foreach (string item in items)
             {
                 if (File.Exists(item) && Path.GetExtension(item).Equals(".osu", StringComparison.OrdinalIgnoreCase))
-                {
                     osuFiles.Add(item);
-                }
                 else if (Directory.Exists(item))
                 {
                     try
                     {
-                        var found = Directory.GetFiles(item, "*.osu", SearchOption.AllDirectories);
+                        string[] found = Directory.GetFiles(item, "*.osu", SearchOption.AllDirectories);
                         osuFiles.AddRange(found);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[ERROR] Error accessing directory {item}: {ex.Message}");
+                        Logger.WriteLine(LogLevel.Error, "[FileDropZone] Error accessing directory {0}: {1}", item,
+                                         ex.Message);
                     }
                 }
             }
+
             return osuFiles;
         }
 
@@ -252,11 +288,11 @@ namespace krrTools.Utilities
             else
             {
                 string prefix = _currentSource switch
-                {
-                    FileSource.Dropped => "[拖入] ",
-                    FileSource.Listened => "[监听] ",
-                    _ => ""
-                };
+                                {
+                                    FileSource.Dropped => _droppedPrefixLocalized.Value,
+                                    FileSource.Listened => _listenedPrefixLocalized.Value,
+                                    _ => ""
+                                };
                 DisplayText = prefix + string.Format(_dropFilesHintLocalized.Value, _stagedPaths.Length);
             }
         }
@@ -270,7 +306,10 @@ namespace krrTools.Utilities
             }
         }
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnLanguageChanged()
+        {
+            UpdateDisplayText();
+        }
 
         private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
@@ -280,6 +319,7 @@ namespace krrTools.Utilities
         private void SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
         {
             if (EqualityComparer<T>.Default.Equals(field, value)) return;
+
             field = value;
             OnPropertyChanged(propertyName);
         }
@@ -287,41 +327,46 @@ namespace krrTools.Utilities
         // 事件处理方法
         private void OnBeatmapChanged(BeatmapChangedEvent e)
         {
-            // 处理路径变化事件
-            if (e.ChangeType == BeatmapChangeType.FromMonitoring)
+            // 使用Dispatcher确保在UI线程上执行，避免跨线程访问错误
+            Application.Current.Dispatcher.Invoke(() =>
             {
-                if (!string.IsNullOrEmpty(e.FilePath) && File.Exists(e.FilePath))
+                // 处理路径变化事件
+                if (e.ChangeType == BeatmapChangeType.FromMonitoring)
                 {
-                    SetFiles([e.FilePath], FileSource.Listened);
+                    if (!string.IsNullOrEmpty(e.FilePath) && File.Exists(e.FilePath))
+                        SetFiles([e.FilePath], FileSource.Listened);
+                    return;
                 }
-                return;
-            }
 
-            if (e.ChangeType == BeatmapChangeType.FromDropZone)
-            {
-                if (!string.IsNullOrEmpty(e.FilePath) && File.Exists(e.FilePath))
+                if (e.ChangeType == BeatmapChangeType.FromDropZone)
                 {
-                    SetFiles([e.FilePath], FileSource.Dropped);
+                    if (!string.IsNullOrEmpty(e.FilePath) && File.Exists(e.FilePath))
+                        SetFiles([e.FilePath]);
+                    return;
                 }
-                return;
-            }
-            
-            // 如果当前是监听状态且路径匹配，发布预览刷新事件
-            if (e.FilePath == _stagedPaths?.FirstOrDefault())
-            {
-                EventBus.Publish(new PreviewRefreshEvent
-                {
 
+                EventBus.Publish(new ConvPrevRefreshOnlyEvent
+                {
+                    NewValue = false
                 });
-            }
+            });
         }
 
         private void OnMonitoringEnabledChanged(MonitoringEnabledChangedEvent e)
         {
-            if (e.NewValue && _stagedPaths is { Length: > 0 })
+            // 使用Dispatcher确保在UI线程上执行，避免跨线程访问错误
+            Application.Current.Dispatcher.Invoke(() =>
             {
-                SetSource(FileSource.Listened);
-            }
+                if (e.NewValue && _stagedPaths is { Length: > 0 })
+                {
+                    SetSource(FileSource.Listened);
+                    EventBus.Publish(new ConvPrevRefreshOnlyEvent
+                    {
+                        NewValue = e.NewValue
+                    });
+                }
+                else if (!e.NewValue) SetSource(FileSource.None);
+            });
         }
     }
 }

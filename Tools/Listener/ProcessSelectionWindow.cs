@@ -26,17 +26,27 @@ namespace krrTools.Tools.Listener
                 {
                     try
                     {
-                        Title = "选择osu!进程"; // TODO: localize if needed
+                        Title = "选择osu!进程|Selected osu! process";
                         // update any labels/buttons by rebuilding
-                        var dc = DataContext;
+                        object? dc = DataContext;
                         Content = null;
                         BuildUI(null); // rebuild without processes? but need to keep
                         DataContext = dc;
                     }
-                    catch (Exception ex) { Logger.WriteLine(LogLevel.Error, "[ProcessSelectionWindow] ProcessSelectionWindow inner rebuild failed: {0}", ex.Message); }
+                    catch (Exception ex)
+                    {
+                        Logger.WriteLine(LogLevel.Error,
+                                         "[ProcessSelectionWindow] ProcessSelectionWindow inner rebuild failed: {0}",
+                                         ex.Message);
+                    }
                 }));
             }
-            catch (Exception ex) { Logger.WriteLine(LogLevel.Error, "[ProcessSelectionWindow] ProcessSelectionWindow OnLanguageChanged invoke failed: {0}", ex.Message); }
+            catch (Exception ex)
+            {
+                Logger.WriteLine(LogLevel.Error,
+                                 "[ProcessSelectionWindow] ProcessSelectionWindow OnLanguageChanged invoke failed: {0}",
+                                 ex.Message);
+            }
         }
 
         private void BuildUI(Process[]? processes)
@@ -58,14 +68,16 @@ namespace krrTools.Tools.Listener
             grid.Children.Add(tb);
 
             ProcessListBox = new ListBox { Margin = new Thickness(0, 0, 0, 10) };
+
             if (processes != null)
             {
-                foreach (var p in processes)
+                foreach (Process p in processes)
                 {
                     try
                     {
                         string exePath = p.MainModule?.FileName ?? "Unknown";
-                        ProcessListBox.Items.Add(new ListBoxItem { Content = $"PID: {p.Id}, Path: {exePath}", Tag = p });
+                        ProcessListBox.Items.Add(new ListBoxItem
+                                                     { Content = $"PID: {p.Id}, Path: {exePath}", Tag = p });
                     }
                     catch
                     {
@@ -73,15 +85,22 @@ namespace krrTools.Tools.Listener
                     }
                 }
             }
+
             Grid.SetRow(ProcessListBox, 1);
             grid.Children.Add(ProcessListBox);
 
-            var sp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var sp = new StackPanel
+                { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             Grid.SetRow(sp, 2);
 
-            var okBtn = new Wpf.Ui.Controls.Button { Content = "确定", Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, Width = 80, Margin = new Thickness(0, 0, 10, 0) };
+            var okBtn = new Wpf.Ui.Controls.Button
+            {
+                Content = "确定", Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, Width = 80,
+                Margin = new Thickness(0, 0, 10, 0)
+            };
             okBtn.Click += OkButton_Click;
-            var cancelBtn = new Wpf.Ui.Controls.Button { Content = "取消", Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary, Width = 80 };
+            var cancelBtn = new Wpf.Ui.Controls.Button
+                { Content = "取消", Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary, Width = 80 };
             cancelBtn.Click += CancelButton_Click;
 
             sp.Children.Add(okBtn);
@@ -100,9 +119,7 @@ namespace krrTools.Tools.Listener
                 DialogResult = true;
             }
             else
-            {
                 MessageBox.Show("请选择一个进程。");
-            }
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)

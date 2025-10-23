@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using OsuParsers.Beatmaps;
 using OsuParsers.Beatmaps.Objects;
+using OsuParsers.Beatmaps.Objects.Mania;
+using OsuParsers.Enums.Beatmaps;
 
 namespace krrTools.Beatmaps
 {
@@ -16,18 +19,20 @@ namespace krrTools.Beatmaps
             if (beatmap == null)
                 return 180;
 
-            var tp = beatmap.TimingPoints
-                .Where(p => p.BeatLength > 0)
-                .OrderBy(p => p.Offset)
-                .ToList();
+            List<TimingPoint> tp = beatmap.TimingPoints
+                                          .Where(p => p.BeatLength > 0)
+                                          .OrderBy(p => p.Offset)
+                                          .ToList();
             if (tp.Count == 0)
                 return 0;
 
             double maxDuration = -1;
-            var longestPoint = tp[0];
-            for (var i = 0; i < tp.Count - 1; i++)
+            TimingPoint longestPoint = tp[0];
+
+            for (int i = 0; i < tp.Count - 1; i++)
             {
                 double duration = tp[i + 1].Offset - tp[i].Offset;
+
                 if (duration > maxDuration)
                 {
                     maxDuration = duration;
@@ -35,44 +40,56 @@ namespace krrTools.Beatmaps
                 }
             }
 
-            var bpm = Math.Round(60000 / longestPoint.BeatLength, 2);
+            double bpm = Math.Round(60000 / longestPoint.BeatLength, 2);
             return asMs ? 60000.0 / Math.Max(1.0, bpm) : bpm;
+        }
+
+        public static string GetBPMDisplay(this Beatmap beatmap)
+        {
+            double bpm = beatmap.MainBPM;
+            double bpmMax = beatmap.MaxBPM;
+            double bpmMin = beatmap.MinBPM;
+
+            string BPMFormat = string.Format(CultureInfo.InvariantCulture, "{0:F0}({1:F0} - {2:F0})", bpm, bpmMin, bpmMax);
+
+            return BPMFormat;
         }
 
         public static (NoteMatrix, List<int>) BuildMatrix(this Beatmap beatmap)
         {
-            var cs = (int)beatmap.DifficultySection.CircleSize;
+            int cs = (int)beatmap.DifficultySection.CircleSize;
             var timePoints = new SortedSet<int>();
-            foreach (var hitObject in beatmap.HitObjects)
+
+            foreach (HitObject? hitObject in beatmap.HitObjects)
             {
                 timePoints.Add(hitObject.StartTime);
                 if (hitObject.EndTime > 0) timePoints.Add(hitObject.EndTime);
             }
 
-            var timeAxis = timePoints.ToList();
-            var h = timeAxis.Count;
-            var a = cs;
+            List<int> timeAxis = timePoints.ToList();
+            int h = timeAxis.Count;
+            int a = cs;
 
             var matrix = new NoteMatrix(h, a);
             // NoteMatrix already initialized to Empty (-1)
 
-            var timeToRow = timeAxis
-                .Select((time, index) => new { time, index })
-                .ToDictionary(x => x.time, x => x.index);
+            Dictionary<int, int> timeToRow = timeAxis
+                                            .Select((time, index) => new { time, index })
+                                            .ToDictionary(x => x.time, x => x.index);
 
-            for (var i = 0; i < beatmap.HitObjects.Count; i++)
+            for (int i = 0; i < beatmap.HitObjects.Count; i++)
             {
-                var hitObject = beatmap.HitObjects[i];
-                var column = positionXToColumn(cs, (int)hitObject.Position.X);
-                var startRow = timeToRow[hitObject.StartTime];
+                HitObject? hitObject = beatmap.HitObjects[i];
+                int column = positionXToColumn(cs, (int)hitObject.Position.X);
+                int startRow = timeToRow[hitObject.StartTime];
 
                 matrix[startRow, column] = i;
 
                 if (hitObject.EndTime > 0)
                 {
-                    var endRow = timeToRow[hitObject.EndTime];
+                    int endRow = timeToRow[hitObject.EndTime];
 
-                    for (var row = startRow + 1; row <= endRow; row++) matrix[row, column] = NoteMatrix.HoldBody;
+                    for (int row = startRow + 1; row <= endRow; row++) matrix[row, column] = NoteMatrix.HoldBody;
                 }
             }
 
@@ -81,14 +98,13 @@ namespace krrTools.Beatmaps
 
         private static int positionXToColumn(int CS, int X)
         {
-            var column = (int)Math.Floor(X * (double)CS / 512);
+            int column = (int)Math.Floor(X * (double)CS / 512);
             return column;
         }
 
         private static int columnToPositionX(int CS, int column)
         {
-            // int set_x = ((column - 1) * 512 / CS) + (256 / CS); // 不要删
-            var x = (int)Math.Floor((column + 0.5) * (512.0 / CS));
+            int x = (int)Math.Floor((column + 0.5) * (512.0 / CS));
             return x;
         }
 
@@ -103,22 +119,22 @@ namespace krrTools.Beatmaps
         public static string GetOutputOsuFileName(this Beatmap beatmap, bool? isPreview = null)
         {
             // 清理文件名中的非法字符
-            var artist = beatmap.MetadataSection.Artist ?? "";
-            var title = beatmap.MetadataSection.Title ?? "";
-            var creator = beatmap.MetadataSection.Creator ?? "";
-            var version = beatmap.MetadataSection.Version ?? "";
+            string artist = beatmap.MetadataSection.Artist ?? "";
+            string title = beatmap.MetadataSection.Title ?? "";
+            string creator = beatmap.MetadataSection.Creator ?? "";
+            string version = beatmap.MetadataSection.Version ?? "";
 
             // 使用正则表达式移除所有非法字符
-            var invalidCharsPattern = $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]";
+            string invalidCharsPattern = $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]";
             artist = Regex.Replace(artist, invalidCharsPattern, "");
             title = Regex.Replace(title, invalidCharsPattern, "");
             creator = Regex.Replace(creator, invalidCharsPattern, "");
             version = Regex.Replace(version, invalidCharsPattern, "");
-            var FileName = isPreview == true
-                ? $"{title} // {version}"
-                : $"{artist} - {title} ({creator}) [{version}]";
+            string FileName = isPreview == true
+                                  ? $"{title} // {version}"
+                                  : $"{artist} - {title} ({creator}) [{version}]";
 
-            var remainder = 250 - beatmap.OriginalFilePath.Length;
+            int remainder = 250 - beatmap.OriginalFilePath.Length;
 
             if (FileName.Length > remainder) FileName = FileName.Substring(0, remainder) + "...";
 
@@ -130,15 +146,15 @@ namespace krrTools.Beatmaps
 
         public static Dictionary<double, double> GetBeatLengthList(this Beatmap beatmap)
         {
-            var tp = beatmap.TimingPoints
-                .Where(p => p.BeatLength > 0)
-                .OrderBy(p => p.Offset)
-                .ToList();
+            List<TimingPoint> tp = beatmap.TimingPoints
+                                          .Where(p => p.BeatLength > 0)
+                                          .OrderBy(p => p.Offset)
+                                          .ToList();
             if (tp.Count == 0)
                 return new Dictionary<double, double>();
 
             var beatLengthDict = new Dictionary<double, double>();
-            foreach (var timingPoint in tp) beatLengthDict[timingPoint.Offset] = timingPoint.BeatLength;
+            foreach (TimingPoint timingPoint in tp) beatLengthDict[timingPoint.Offset] = timingPoint.BeatLength;
 
             return beatLengthDict;
         }
@@ -148,18 +164,7 @@ namespace krrTools.Beatmaps
             if (beatmap.GeneralSection.ModeId != 3) return null;
 
             if (beatmap.HitObjects.Count == 0) return null;
-            
-            // if (path != null)
-            // {
-            //     beatmap.OriginalFilePath = path;
-            //
-            //     if (!File.Exists(path))
-            //         throw new FileNotFoundException($"文件未找到: {path}");
-            //
-            //     if (Path.GetExtension(path).ToLower() != ".osu")
-            //         throw new ArgumentException("文件扩展名必须为.osu");
-            // }
-            
+
             return beatmap;
         }
 
@@ -167,32 +172,33 @@ namespace krrTools.Beatmaps
         {
             // 复制所有基本属性
             var newPosition = new Vector2(positionX, hitObject.Position.Y);
-            var startTime = hitObject.StartTime;
-            var endTime = hitObject.EndTime;
-            var hitSound = hitObject.HitSound;
+            int startTime = hitObject.StartTime;
+            int endTime = hitObject.EndTime;
+            HitSoundType hitSound = hitObject.HitSound;
 
             // 正确复制Extras，确保不为null
-            var newExtras = hitObject.Extras != null
-                ? new Extras(
-                    hitObject.Extras.SampleSet,
-                    hitObject.Extras.AdditionSet,
-                    hitObject.Extras.CustomIndex,
-                    hitObject.Extras.Volume,
-                    hitObject.Extras.SampleFileName
-                )
-                : new Extras();
+            Extras newExtras = hitObject.Extras != null
+                                   ? new Extras(
+                                       hitObject.Extras.SampleSet,
+                                       hitObject.Extras.AdditionSet,
+                                       hitObject.Extras.CustomIndex,
+                                       hitObject.Extras.Volume,
+                                       hitObject.Extras.SampleFileName
+                                   )
+                                   : new Extras();
 
             // 保持原始对象的其他属性
-            var isNewCombo = hitObject.IsNewCombo;
-            var comboOffset = hitObject.ComboOffset;
+            bool isNewCombo = hitObject.IsNewCombo;
+            int comboOffset = hitObject.ComboOffset;
 
             // 根据WriteHelper.TypeByte的逻辑来判断对象类型
             // 检查是否是长音符（mania模式下）
-            var isHoldNote = hitObject.EndTime > hitObject.StartTime;
+            bool isHoldNote = hitObject.EndTime > hitObject.StartTime;
 
             if (isHoldNote)
                 // 创建ManiaHoldNote对象
-                return new OsuParsers.Beatmaps.Objects.Mania.ManiaHoldNote(
+            {
+                return new ManiaHoldNote(
                     newPosition,
                     startTime,
                     endTime,
@@ -201,9 +207,11 @@ namespace krrTools.Beatmaps
                     isNewCombo,
                     comboOffset
                 );
+            }
             else
                 // 创建普通HitObject对象
-                return new OsuParsers.Beatmaps.Objects.Mania.ManiaNote(
+            {
+                return new ManiaNote(
                     newPosition,
                     startTime,
                     endTime,
@@ -212,6 +220,7 @@ namespace krrTools.Beatmaps
                     isNewCombo,
                     comboOffset
                 );
+            }
         }
 
         public static void SortHitObjects(this Beatmap beatmap)

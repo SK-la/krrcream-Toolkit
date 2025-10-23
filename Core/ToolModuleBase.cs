@@ -13,22 +13,27 @@ namespace krrTools.Core
     {
         N2NC,
         DP,
+
         KRRLN
         // 新模块在此添加
     }
 
     /// <summary>
     /// 转换模块基类 - 实现IToolModule，职责分离
+    /// <para></para>
     /// 提供统一的模块框架，支持选项管理、UI创建和谱面转换。
+    /// <para></para>
     /// 子类需实现ApplyToBeatmapInternal以定义具体转换逻辑。
+    /// <para></para>
+    /// 泛型参数TOptions、TViewModel和TControl保护类型安全，确保模块与其配置和UI组件一致。
     /// </summary>
     public abstract class ToolModuleBase<TOptions, TViewModel, TControl> : IToolModule
         where TOptions : ToolOptionsBase, new()
         where TViewModel : ToolViewModelBase<TOptions>
         where TControl : ToolViewBase<TOptions>
     {
-        protected TOptions _currentOptions = new();
-        protected ReactiveOptions<TOptions>? _reactiveOptions;
+        private TOptions _currentOptions = new TOptions();
+        private ReactiveOptions<TOptions>? _reactiveOptions;
 
         protected ToolModuleBase(ReactiveOptions<TOptions>? reactiveOptions = null)
         {
@@ -48,7 +53,10 @@ namespace krrTools.Core
         /// </summary>
         private void LoadCurrentOptions()
         {
-            _currentOptions = BaseOptionsManager.LoadOptions<TOptions>((ConverterEnum)Enum.Parse(typeof(ConverterEnum), ModuleType.ToString())) ?? CreateDefaultOptionsInternal();
+            _currentOptions =
+                BaseOptionsManager.LoadOptions<TOptions>(
+                    (ConverterEnum)Enum.Parse(typeof(ConverterEnum), ModuleType.ToString())) ??
+                CreateDefaultOptionsInternal();
         }
 
         /// <summary>
@@ -64,7 +72,10 @@ namespace krrTools.Core
         /// <summary>
         /// 模块内部名称（用于配置和文件）
         /// </summary>
-        public virtual string ModuleName => ModuleType.ToString();
+        public virtual string ModuleName
+        {
+            get => ModuleType.ToString();
+        }
 
         /// <summary>
         /// 模块显示名称
@@ -88,17 +99,12 @@ namespace krrTools.Core
             try
             {
                 // 优先使用注入的ReactiveOptions
-                if (_reactiveOptions != null)
-                {
-                    return _reactiveOptions.Options;
-                }
+                if (_reactiveOptions != null) return _reactiveOptions.Options;
 
                 // 回退到从DI容器获取
-                var services = App.Services;
+                IServiceProvider services = App.Services;
                 if (services.GetService(typeof(ReactiveOptions<TOptions>)) is ReactiveOptions<TOptions> reactOptions)
-                {
                     return reactOptions.Options;
-                }
 
                 Console.WriteLine($"[{ModuleType}Module] 无法获取ReactiveOptions，使用默认设置");
                 return _currentOptions;
@@ -119,9 +125,9 @@ namespace krrTools.Core
         /// <summary>
         /// 实现 IApplyToBeatmap 接口
         /// </summary>
-        public void ApplyToBeatmap(IBeatmap beatmap)
+        public void ApplyToBeatmap(Beatmap beatmap)
         {
-            var b = beatmap as Beatmap ?? throw new ArgumentException("IBeatmap must be Beatmap");
+            Beatmap b = beatmap; // as Beatmap ?? throw new ArgumentException("IBeatmap must be Beatmap"); // 类型检查已在调用处完成
             ApplyToBeatmapInternal(b);
         }
     }

@@ -1,148 +1,121 @@
 #nullable enable
+using krrTools.Bindable;
 using krrTools.Configuration;
+using krrTools.Core;
 using krrTools.Tools.Preview;
 using krrTools.Utilities;
 using Moq;
 using Xunit;
 
-namespace krrTools.Tests.交互检查;
-
-public class FileDropZoneSimpleTests
+namespace krrTools.Tests.交互检查
 {
-    // 在STA线程中创建实例，避免Mock问题
-    private FileDropZoneViewModel CreateViewModel()
+    public class FileDropZoneSimpleTests
     {
-        var mockPreviewViewModel = new Mock<PreviewViewModel>();
-        var previewDual = new PreviewViewDual(mockPreviewViewModel.Object);
-        var fileDispatcher = new FileDispatcher();
+        private readonly Mock<IModuleManager> _mockModuleManager;
+        private readonly Mock<IEventBus> _mockEventBus;
 
-        static ConverterEnum getActiveTabTag()
+        public FileDropZoneSimpleTests()
         {
-            return ConverterEnum.N2NC;
+            _mockModuleManager = new Mock<IModuleManager>();
+            _mockEventBus = new Mock<IEventBus>();
         }
 
-        return new FileDropZoneViewModel(fileDispatcher)
+        // 在STA线程中创建实例，避免Mock问题
+        private FileDropZoneViewModel CreateViewModel()
         {
-            PreviewDual = previewDual,
-            GetActiveTabTag = getActiveTabTag
-        };
-    }
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
 
-    [Fact]
-    public void Constructor_ShouldCreateFileDropZone()
-    {
-        STATestHelper.RunInSTA(() =>
+            static ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
+
+            return new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
+        }
+
+        // 创建FileDropZone实例用于测试
+        private FileDropZone CreateFileDropZone()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
+            var dropZone = new FileDropZone(fileDispatcher, true); // 使用跳过注入的构造函数
+            // 手动设置ViewModel的EventBus，避免依赖注入
+            dropZone.ViewModel.EventBus = _mockEventBus.Object;
+            return dropZone;
+        }
 
-            // Act
-            var dropZone = new FileDropZone();
-            dropZone.SetViewModel(viewModel);
-
-            // Assert
-            Assert.NotNull(dropZone);
-            Assert.True(dropZone.AllowDrop);
-            Assert.Equal(viewModel, dropZone.DataContext);
-        });
-    }
-
-    [Fact]
-    public void Constructor_ShouldSetAllowDrop()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void Constructor_ShouldCreateFileDropZone()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
 
-            // Act
-            var dropZone = new FileDropZone();
-            dropZone.SetViewModel(viewModel);
+                // Act
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
 
-            // Assert
-            Assert.True(dropZone.AllowDrop);
-        });
-    }
+                // Assert
+                Assert.NotNull(dropZone);
+                Assert.True(dropZone.AllowDrop);
+                Assert.Equal(viewModel, dropZone.DataContext);
+            });
+        }
 
-    [Fact]
-    public void Constructor_ShouldSetDataContext()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void Constructor_ShouldSetAllowDrop()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
 
-            // Act
-            var dropZone = new FileDropZone();
-            dropZone.SetViewModel(viewModel);
+                // Act
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
 
-            // Assert
-            Assert.Equal(viewModel, dropZone.DataContext);
-        });
-    }
+                // Assert
+                Assert.True(dropZone.AllowDrop);
+            });
+        }
 
-    [Fact]
-    public void Constructor_ShouldSetHeight()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void Constructor_ShouldSetDataContext()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
 
-            // Act
-            var dropZone = new FileDropZone();
-            dropZone.SetViewModel(viewModel);
+                // Act
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
 
-            // Assert
-            Assert.True(dropZone.Height > 0);
-        });
-    }
+                // Assert
+                Assert.Equal(viewModel, dropZone.DataContext);
+            });
+        }
 
-    [Fact]
-    public void ViewModel_IsConversionEnabled_ShouldReflectFileAvailability()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void ViewModel_DisplayText_ShouldUpdateWhenFilesChange()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
-            var dropZone = new FileDropZone();
-            dropZone.SetViewModel(viewModel);
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
+                string initialText = viewModel.DisplayText;
 
-            // Initially should be disabled
-            Assert.False(viewModel.IsConversionEnabled);
+                // Act
+                viewModel.SetFiles(["test1.osu", "test2.osu"]);
+                string updatedText = viewModel.DisplayText;
 
-            // Act - Set files
-            viewModel.SetFiles(["test.osu"]);
-
-            // Assert - Should be enabled
-            Assert.True(viewModel.IsConversionEnabled);
-
-            // Act - Clear files
-            viewModel.SetFiles(null);
-
-            // Assert - Should be disabled again
-            Assert.False(viewModel.IsConversionEnabled);
-        });
-    }
-
-    [Fact]
-    public void ViewModel_DisplayText_ShouldUpdateWhenFilesChange()
-    {
-        STATestHelper.RunInSTA(() =>
-        {
-            // Arrange
-            var viewModel = CreateViewModel();
-            var dropZone = new FileDropZone();
-            dropZone.SetViewModel(viewModel);
-            var initialText = viewModel.DisplayText;
-
-            // Act
-            viewModel.SetFiles(["test1.osu", "test2.osu"]);
-            var updatedText = viewModel.DisplayText;
-
-            // Assert
-            Assert.NotEqual(initialText, updatedText);
-            Assert.Contains("2", updatedText); // Should show file count
-        });
+                // Assert
+                Assert.NotEqual(initialText, updatedText);
+                Assert.Contains("2", updatedText); // Should show file count
+            });
+        }
     }
 }

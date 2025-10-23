@@ -14,7 +14,9 @@ namespace krrTools.UI
 
         // 颜色和画刷
         public static readonly Brush UiTextBrush = new SolidColorBrush(Color.FromArgb(255, 33, 33, 33));
-        public static readonly Brush PanelBorderBrush = new SolidColorBrush(Color.FromArgb(51, 0, 0, 0)); // subtle dark border ~20%
+
+        public static readonly Brush
+            PanelBorderBrush = new SolidColorBrush(Color.FromArgb(51, 0, 0, 0)); // subtle dark border ~20%
 
         // 面板样式
         public static readonly CornerRadius PanelCornerRadius = new CornerRadius(8);

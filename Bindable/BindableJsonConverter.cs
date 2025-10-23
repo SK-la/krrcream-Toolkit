@@ -13,7 +13,7 @@ namespace krrTools.Bindable
         public override Bindable<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             // Deserialize the value directly
-            T? value = JsonSerializer.Deserialize<T>(ref reader, options);
+            var value = JsonSerializer.Deserialize<T>(ref reader, options);
             return new Bindable<T>(value ?? default!);
         }
 

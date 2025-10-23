@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace krrTools.Bindable
 {
@@ -11,14 +13,29 @@ namespace krrTools.Bindable
     /// Inspired by osu! framework's Bindable system.
     /// </summary>
     /// <typeparam name="T">The type of the value.</typeparam>
-    public class Bindable<T>(T defaultValue = default!) : INotifyPropertyChanged
+    public class Bindable<T> : INotifyPropertyChanged
     {
-        private T _value = defaultValue;
+        private T _value;
         private bool _disabled;
         private Func<T, T>? _mapping;
-        private Action<T>? _onValueChanged;
-        private Func<T, Task>? _onValueChangedAsync;
+        private List<Action<T>> _onValueChangedCallbacks = new List<Action<T>>();
+        private List<Func<T, Task>> _onValueChangedAsyncCallbacks = new List<Func<T, Task>>();
         private bool _isNotifying; // 防递归标志
+        private INotifyCollectionChanged? _collectionChanged;
+        private T _previousValue; // 用于撤销功能
+
+        public Bindable(T defaultValue = default!)
+        {
+            _value = defaultValue;
+            _previousValue = defaultValue; // 初始化上一个值
+
+            // 如果默认值是集合，监听其改变
+            if (_value is INotifyCollectionChanged collection)
+            {
+                _collectionChanged = collection;
+                _collectionChanged.CollectionChanged += OnCollectionChanged;
+            }
+        }
 
         public T Value
         {
@@ -26,7 +43,10 @@ namespace krrTools.Bindable
             set => Set(value);
         }
 
-        public T RawValue => _value;
+        public T RawValue
+        {
+            get => _value;
+        }
 
         public bool Disabled
         {
@@ -46,26 +66,50 @@ namespace krrTools.Bindable
             if (_disabled || _isNotifying) return; // 防递归
             if (EqualityComparer<T>.Default.Equals(_value, value)) return;
 
+            // 保存上一个值用于撤销
+            _previousValue = _value;
+
+            // 移除旧值的监听
+            if (_collectionChanged != null)
+            {
+                _collectionChanged.CollectionChanged -= OnCollectionChanged;
+                _collectionChanged = null;
+            }
+
             _value = value;
+
+            // 如果新值是集合，监听其改变
+            if (_value is INotifyCollectionChanged newCollection)
+            {
+                _collectionChanged = newCollection;
+                _collectionChanged.CollectionChanged += OnCollectionChanged;
+            }
 
             // 异步通知，避免阻塞
             _ = NotifyValueChangedAsync(_value);
+
+            // 调试测试绑定变化
+            // Logger.WriteLine(LogLevel.Debug, $"[Bindable] Property '{propertyName}' changed to '{value}'");
             OnPropertyChanged(propertyName ?? nameof(Value));
+        }
+
+        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            // 当集合内容改变时，触发 PropertyChanged 以更新 UI
+            OnPropertyChanged(nameof(Value));
         }
 
         private async Task NotifyValueChangedAsync(T value)
         {
             _isNotifying = true;
+
             try
             {
-                // 同步回调（保持兼容性，但不推荐）
-                _onValueChanged?.Invoke(value);
-                
+                // 同步回调
+                foreach (Action<T> callback in _onValueChangedCallbacks) callback(value);
+
                 // 异步回调
-                if (_onValueChangedAsync != null)
-                {
-                    await _onValueChangedAsync(value);
-                }
+                foreach (Func<T, Task> callback in _onValueChangedAsyncCallbacks) await callback(value);
             }
             finally
             {
@@ -94,7 +138,7 @@ namespace krrTools.Bindable
             // One-way from other to this
             other.PropertyChanged += (_, _) => Value = other.Value;
             // One-way from this to other
-            this.PropertyChanged += (_, _) => other.Value = this.Value;
+            PropertyChanged += (_, _) => other.Value = Value;
         }
 
         /// <summary>
@@ -111,7 +155,7 @@ namespace krrTools.Bindable
         /// </summary>
         public Bindable<T> OnValueChanged(Action<T> callback)
         {
-            _onValueChanged = callback;
+            _onValueChangedCallbacks.Add(callback);
             return this;
         }
 
@@ -120,7 +164,7 @@ namespace krrTools.Bindable
         /// </summary>
         public Bindable<T> OnValueChangedAsync(Func<T, Task> callback)
         {
-            _onValueChangedAsync = callback;
+            _onValueChangedAsyncCallbacks.Add(callback);
             return this;
         }
 
@@ -131,6 +175,14 @@ namespace krrTools.Bindable
         {
             // In a full implementation, track bindings and remove them.
             // For simplicity, this is a placeholder.
+        }
+
+        /// <summary>
+        /// Undo the last value change.
+        /// </summary>
+        public void Undo()
+        {
+            if (!EqualityComparer<T>.Default.Equals(_previousValue, default)) Value = _previousValue;
         }
     }
 }

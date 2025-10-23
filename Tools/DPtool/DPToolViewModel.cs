@@ -12,7 +12,8 @@ namespace krrTools.Tools.DPtool
     /// </summary>
     public class DPToolViewModel : ToolViewModelBase<DPToolOptions>, IPreviewOptionsProvider
     {
-        public DPToolViewModel(DPToolOptions options) : base(ConverterEnum.DP, true, options)
+        public DPToolViewModel(DPToolOptions options)
+            : base(ConverterEnum.DP, true, options)
         {
             // 本地化事件处理器委托引用，用于Dispose时取消订阅
             PropertyChangedEventHandler optionsPropertyChangedHandler =
@@ -20,7 +21,7 @@ namespace krrTools.Tools.DPtool
                 OnOptionsPropertyChanged;
             Options.PropertyChanged += optionsPropertyChangedHandler;
         }
-        
+
         /// <summary>
         /// Options属性变化事件处理器 - 处理约束逻辑
         /// </summary>
@@ -36,31 +37,32 @@ namespace krrTools.Tools.DPtool
                         if (Options.SingleSideKeyCount.Value < 1) Options.SingleSideKeyCount.Value = 1;
                         if (Options.SingleSideKeyCount.Value > 12) Options.SingleSideKeyCount.Value = 12;
                     }
-                    break;
+
+                break;
 
                 case nameof(Options.LMinKeys):
                     // 约束逻辑：LMinKeys不能大于LMaxKeys
                     if (Options.LMinKeys.Value > Options.LMaxKeys.Value)
                         Options.LMinKeys.Value = Options.LMaxKeys.Value;
-                    break;
+                break;
 
                 case nameof(Options.LMaxKeys):
                     // 约束逻辑：LMaxKeys不能小于LMinKeys
                     if (Options.LMaxKeys.Value < Options.LMinKeys.Value)
                         Options.LMaxKeys.Value = Options.LMinKeys.Value;
-                    break;
+                break;
 
                 case nameof(Options.RMinKeys):
                     // 约束逻辑：RMinKeys不能大于RMaxKeys
                     if (Options.RMinKeys.Value > Options.RMaxKeys.Value)
                         Options.RMinKeys.Value = Options.RMaxKeys.Value;
-                    break;
+                break;
 
                 case nameof(Options.RMaxKeys):
                     // 约束逻辑：RMaxKeys不能小于RMinKeys
                     if (Options.RMaxKeys.Value < Options.RMinKeys.Value)
                         Options.RMaxKeys.Value = Options.RMinKeys.Value;
-                    break;
+                break;
             }
         }
 
@@ -89,8 +91,6 @@ namespace krrTools.Tools.DPtool
             set => Options.LRemove.Value = value;
         }
 
-
-
         public bool RMirror
         {
             get => Options.RMirror.Value;
@@ -108,8 +108,6 @@ namespace krrTools.Tools.DPtool
             get => Options.RRemove.Value;
             set => Options.RRemove.Value = value;
         }
-
-
 
         public IToolOptions GetPreviewOptions()
         {
@@ -129,8 +127,14 @@ namespace krrTools.Tools.DPtool
         }
 
         // 计算属性 - 动态最大值约束
-        public double LMinKeysMaximum => Options.LMaxKeys.Value;
-        public double RMinKeysMaximum => Options.RMaxKeys.Value;
+        public double LMinKeysMaximum
+        {
+            get => Options.LMaxKeys.Value;
+        }
+        public double RMinKeysMaximum
+        {
+            get => Options.RMaxKeys.Value;
+        }
 
         /// <summary>
         /// 释放资源，取消所有事件订阅

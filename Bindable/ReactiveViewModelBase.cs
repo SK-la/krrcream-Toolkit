@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace krrTools.Bindable
@@ -33,39 +34,37 @@ namespace krrTools.Bindable
 
         public void Dispose()
         {
-            foreach (var d in Disposables) d.Dispose();
+            foreach (IDisposable d in Disposables) d.Dispose();
             Disposables.Clear();
         }
 
         protected void SetupAutoBindableNotifications()
         {
             // Handle fields
-            var fields = GetType().GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            foreach (var field in fields)
+            FieldInfo[] fields = GetType().GetFields(BindingFlags.NonPublic | BindingFlags.Instance);
+
+            foreach (FieldInfo field in fields)
             {
                 if (field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(Bindable<>))
                 {
-                    var bindable = field.GetValue(this) as INotifyPropertyChanged;
-                    if (bindable != null)
+                    if (field.GetValue(this) is INotifyPropertyChanged bindable)
                     {
                         string propName = field.Name.TrimStart('_');
                         propName = char.ToUpper(propName[0]) + propName.Substring(1);
-                        bindable.PropertyChanged += (sender, args) => OnPropertyChanged(propName);
+                        bindable.PropertyChanged += (_, _) => OnPropertyChanged(propName);
                     }
                 }
             }
 
             // Handle properties
-            var properties = GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            foreach (var prop in properties)
+            PropertyInfo[] properties = GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+            foreach (PropertyInfo prop in properties)
             {
                 if (prop.PropertyType.IsGenericType && prop.PropertyType.GetGenericTypeDefinition() == typeof(Bindable<>))
                 {
-                    var bindable = prop.GetValue(this) as INotifyPropertyChanged;
-                    if (bindable != null)
-                    {
-                        bindable.PropertyChanged += (sender, args) => OnPropertyChanged(prop.Name);
-                    }
+                    if (prop.GetValue(this) is INotifyPropertyChanged bindable)
+                        bindable.PropertyChanged += (_, _) => OnPropertyChanged(prop.Name);
                 }
             }
         }

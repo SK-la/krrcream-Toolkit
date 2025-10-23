@@ -1,112 +1,189 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
-using krrTools.Beatmaps;
 using krrTools.Bindable;
-using krrTools.Configuration;
-using krrTools.Core;
 using krrTools.Localization;
 using krrTools.UI;
 using krrTools.Utilities;
 using Microsoft.Extensions.Logging;
-using MessageBox = System.Windows.MessageBox;
-using MessageBoxButton = System.Windows.MessageBoxButton;
 
 namespace krrTools.Tools.Listener
 {
     public partial class ListenerControl
     {
-        private ConversionHotkeyManager? _conversionHotkeyManager;
-        private readonly BeatmapTransformationService _transformationService;
-
         public RelayCommand BrowseCommand { get; }
 
-        private readonly ListenerViewModel _viewModel;
-        public ListenerViewModel ViewModel => _viewModel;
+        public ListenerViewModel ViewModel { get; }
 
-        private readonly FileDropZoneViewModel _dropZoneViewModel;
-        public FileDropZoneViewModel DropZoneViewModel => _dropZoneViewModel;
+        public FileDropZoneViewModel DropZoneViewModel { get; }
 
         internal ListenerControl()
         {
             // 自动注入标记了 [Inject] 的属性
             this.InjectServices();
 
-            InitializeComponent();
-            _viewModel = new ListenerViewModel();
-            DataContext = _viewModel;
+            Logger.WriteLine(LogLevel.Debug, "[ListenerControl] Constructor called");
 
-            // 初始化转换服务
-            var moduleManager = App.Services.GetService(typeof(IModuleManager)) as IModuleManager;
-            _transformationService = new BeatmapTransformationService(moduleManager!);
+            InitializeComponent();
+            ViewModel = new ListenerViewModel();
+            DataContext = ViewModel;
 
             // 初始化拖拽区 ViewModel
             var fileDispatcher = new FileDispatcher();
-            _dropZoneViewModel = new FileDropZoneViewModel(fileDispatcher);
-            
-            BrowseCommand = new RelayCommand(() => _viewModel.SetSongsPathWindow());
+            DropZoneViewModel = new FileDropZoneViewModel(fileDispatcher);
+
+            BrowseCommand = new RelayCommand(() => ViewModel.SetSongsPathWindow());
 
             SharedUIComponents.LanguageChanged += OnLanguageChanged;
             Unloaded += (_, _) => SharedUIComponents.LanguageChanged -= OnLanguageChanged;
 
-            _viewModel.WindowTitle = Strings.OSUListener.Localize();
+            ViewModel.WindowTitle = Strings.OSUListener.Localize();
 
-            Loaded += (_, _) =>
-            {
-                InitializeConversionHotkeys();
-            };
+            // 添加快捷键编辑事件
+            N2NCHotkeyTextBox.KeyDown += OnHotkeyKeyDown;
+            N2NCHotkeyTextBox.GotFocus += OnHotkeyTextBoxGotFocus;
+            N2NCHotkeyTextBox.LostFocus += OnHotkeyTextBoxLostFocus;
+
+            DPHotkeyTextBox.KeyDown += OnHotkeyKeyDown;
+            DPHotkeyTextBox.GotFocus += OnHotkeyTextBoxGotFocus;
+            DPHotkeyTextBox.LostFocus += OnHotkeyTextBoxLostFocus;
+
+            KRRLNHotkeyTextBox.KeyDown += OnHotkeyKeyDown;
+            KRRLNHotkeyTextBox.GotFocus += OnHotkeyTextBoxGotFocus;
+            KRRLNHotkeyTextBox.LostFocus += OnHotkeyTextBoxLostFocus;
+
+            Loaded += (_, _) => { Logger.WriteLine(LogLevel.Debug, "[ListenerControl] Loaded event fired"); };
             Unloaded += Window_Closing;
         }
 
         private void Window_Closing(object? sender, RoutedEventArgs e)
         {
-            _conversionHotkeyManager?.Dispose();
         }
 
         private void OnLanguageChanged()
         {
-            Dispatcher.BeginInvoke(new Action(() => { _viewModel.WindowTitle = Strings.OSUListener; }));
+            Dispatcher.BeginInvoke(new Action(() => { ViewModel.WindowTitle = Strings.OSUListener; }));
         }
 
-        private void InitializeConversionHotkeys()
+        #region 快捷键处理
+
+        private string KeyToString(Key key)
         {
-            var mainWindow = Application.Current.MainWindow as MainWindow;
-            if (mainWindow == null) return;
+            // 处理特殊键
+            switch (key)
+            {
+                case Key.OemPlus: return "+";
 
-            _conversionHotkeyManager = new ConversionHotkeyManager(
-                ExecuteConvertWithModule,
-                mainWindow
-            );
+                case Key.OemMinus: return "-";
 
-            // 注册快捷键
-            var globalSettings = BaseOptionsManager.GetGlobalSettings();
-            _conversionHotkeyManager.RegisterHotkeys(globalSettings);
+                case Key.OemQuestion: return "/";
+
+                case Key.OemPeriod: return ".";
+
+                case Key.OemComma: return ",";
+
+                case Key.OemSemicolon: return ";";
+
+                case Key.OemQuotes: return "'";
+
+                case Key.OemOpenBrackets: return "[";
+
+                case Key.OemCloseBrackets: return "]";
+
+                case Key.OemBackslash: return "\\";
+
+                case Key.OemTilde: return "`";
+
+                default: return key.ToString();
+            }
         }
 
-        private void ExecuteConvertWithModule(ConverterEnum converter)
+        private void OnHotkeyKeyDown(object sender, KeyEventArgs e)
         {
-            // 获取当前谱面
-            string beatmapPath = _viewModel.MonitorOsuFilePath;
+            if (sender is not TextBox textBox) return;
 
-            try
+            // 阻止默认行为
+            e.Handled = true;
+
+            // 获取按键组合
+            ModifierKeys modifiers = Keyboard.Modifiers;
+            Key key = e.Key;
+
+            // 忽略单独的修饰键和输入法处理键
+            if (key == Key.LeftCtrl || key == Key.RightCtrl ||
+                key == Key.LeftShift || key == Key.RightShift ||
+                key == Key.LeftAlt || key == Key.RightAlt ||
+                key == Key.System || key == Key.ImeProcessed) return;
+
+            // 构建快捷键字符串
+            var hotkeyParts = new List<string>();
+
+            if ((modifiers & ModifierKeys.Control) != 0) hotkeyParts.Add("Ctrl");
+            if ((modifiers & ModifierKeys.Shift) != 0) hotkeyParts.Add("Shift");
+            if ((modifiers & ModifierKeys.Alt) != 0) hotkeyParts.Add("Alt");
+
+            // 转换键为字符串
+            string keyString = KeyToString(key);
+            if (!string.IsNullOrEmpty(keyString)) hotkeyParts.Add(keyString);
+
+            string hotkey = string.Join("+", hotkeyParts);
+
+            // 根据TextBox设置对应的快捷键
+            if (textBox == N2NCHotkeyTextBox)
             {
-                // 解码谱面
-                var beatmap = OsuParsers.Decoders.BeatmapDecoder.Decode(beatmapPath);
-
-                // 使用转换服务
-                var transformedBeatmap = _transformationService.TransformBeatmap(beatmap, converter);
-
-                // 保存转换后谱面
-                var outputPath = transformedBeatmap!.GetOutputOsuFileName();
-                var outputDir = Path.GetDirectoryName(beatmapPath);
-                var fullOutputPath = Path.Combine(outputDir!, outputPath);
-                transformedBeatmap!.Save(fullOutputPath);
+                ViewModel.SetN2NCHotkey(hotkey);
+                textBox.Text = hotkey;
             }
-            catch (Exception ex)
+            else if (textBox == DPHotkeyTextBox)
             {
-                MessageBox.Show($"Conversion failed: {ex.Message}", Strings.CannotConvert.Localize(), MessageBoxButton.OK, MessageBoxImage.Error);
+                ViewModel.SetDPHotkey(hotkey);
+                textBox.Text = hotkey;
             }
+            else if (textBox == KRRLNHotkeyTextBox)
+            {
+                ViewModel.SetKRRLNHotkey(hotkey);
+                textBox.Text = hotkey;
+            }
+
+            Logger.WriteLine(LogLevel.Debug, $"[ListenerControl] Set hotkey to: {hotkey}");
+        }
+
+        private void OnHotkeyTextBoxGotFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox)
+            {
+                // 当TextBox获得焦点时，禁用输入法以避免ImeProcessed问题
+                InputMethod.SetIsInputMethodEnabled(textBox, false);
+
+                Logger.WriteLine(LogLevel.Debug,
+                                 $"[ListenerControl] Hotkey TextBox got focus: {textBox.Name}, IME disabled");
+            }
+        }
+
+        private void OnHotkeyTextBoxLostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox)
+            {
+                // 当TextBox失去焦点时，重新启用输入法
+                InputMethod.SetIsInputMethodEnabled(textBox, true);
+
+                Logger.WriteLine(LogLevel.Debug,
+                                 $"[ListenerControl] Hotkey TextBox lost focus: {textBox.Name}, IME re-enabled");
+            }
+        }
+
+        #endregion
+
+        private void TestN2NCButton_Click(object sender, RoutedEventArgs e)
+        {
+            Logger.WriteLine(LogLevel.Information, "[ListenerControl] TEST BUTTON: Manual trigger N2NC conversion");
+            // Conversion is now handled by MainWindow global hotkeys
         }
     }
 }

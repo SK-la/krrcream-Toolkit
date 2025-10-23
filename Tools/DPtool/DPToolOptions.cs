@@ -24,11 +24,11 @@ namespace krrTools.Tools.DPtool
         public Bindable<bool> LRemove { get; } = new Bindable<bool>();
 
         [Option(LabelKey = nameof(DPLeftMaxKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double), IsRefresher = true)]
+                DataType = typeof(double), IsRefresher = true)]
         public Bindable<double> LMaxKeys { get; } = new Bindable<double>(5);
 
         [Option(LabelKey = nameof(DPLeftMinKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double), IsRefresher = true)]
+                DataType = typeof(double), IsRefresher = true)]
         public Bindable<double> LMinKeys { get; } = new Bindable<double>(1);
 
         #endregion
@@ -45,11 +45,11 @@ namespace krrTools.Tools.DPtool
         public Bindable<bool> RRemove { get; } = new Bindable<bool>();
 
         [Option(LabelKey = nameof(DPRightMaxKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double), IsRefresher = true)]
+                DataType = typeof(double), IsRefresher = true)]
         public Bindable<double> RMaxKeys { get; } = new Bindable<double>(5);
 
         [Option(LabelKey = nameof(DPRightMinKeysTemplate), Min = 1, Max = 5, UIType = UIType.Slider,
-            DataType = typeof(double), IsRefresher = true)]
+                DataType = typeof(double), IsRefresher = true)]
         public Bindable<double> RMinKeys { get; } = new Bindable<double>(1);
 
         #endregion

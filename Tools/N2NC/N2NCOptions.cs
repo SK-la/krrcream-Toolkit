@@ -15,10 +15,10 @@ namespace krrTools.Tools.N2NC
 
         // 动态最大值将由ViewModel的约束管理处理
         [Option(LabelKey = nameof(N2NCMaxKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
-        public Bindable<double> MaxKeys { get; } = new Bindable<double>(4);
+        public Bindable<double> MaxKeys { get; } = new Bindable<double>(8);
 
         [Option(LabelKey = nameof(N2NCMinKeysTemplate), Min = 1, Max = 18, UIType = UIType.Slider, DataType = typeof(double), IsRefresher = true)]
-        public Bindable<double> MinKeys { get; } = new Bindable<double>(1);
+        public Bindable<double> MinKeys { get; } = new Bindable<double>(2);
 
         [Option(LabelKey = nameof(N2NCTransformSpeedTemplate), Min = 1, Max = 8, UIType = UIType.Slider, DisplayMapField = nameof(TransformSpeedDict), DataType = typeof(double), IsRefresher = true)]
         public Bindable<double> TransformSpeed { get; } = new Bindable<double>(5);
@@ -55,15 +55,12 @@ namespace krrTools.Tools.N2NC
             set => SetProperty(ref _seed, value);
         }
         private int? _seed = 114514;
-
-        public List<int>? SelectedKeyTypes { get; set; }
-
         public KeySelectionFlags? SelectedKeyFlags { get; set; } = KeySelectionFlags.None;
 
         public override void Validate()
         {
             base.Validate(); // First clamp to Min/Max
-            
+
             // 确保 TargetKeys 在合理范围内
             if (TargetKeys.Value < 1) TargetKeys.Value = 1;
             if (TargetKeys.Value > 18) TargetKeys.Value = 18;

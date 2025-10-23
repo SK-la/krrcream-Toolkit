@@ -1,11 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace krrTools.Beatmaps
 {
     public static class ColumnPositionMapper
     {
-        private static readonly Dictionary<int, int[]> KeyValueMap = new()
+        private static readonly Dictionary<int, int[]> KeyValueMap = new Dictionary<int, int[]>
         {
             [1] = [256],
             [2] = [128, 384],
@@ -45,27 +44,22 @@ namespace krrTools.Beatmaps
         };
 
         // Expose a read-only view in case callers want the whole map
-        public static IReadOnlyDictionary<int, int[]> Map => KeyValueMap;
+        public static IReadOnlyDictionary<int, int[]> Map
+        {
+            get => KeyValueMap;
+        }
 
         public static int ColumnToPositionX(int keyCount, int column)
         {
-            if (!KeyValueMap.TryGetValue(keyCount, out var row))
-            {
-                Console.WriteLine($"[ERROR] Unsupported key count: {keyCount}");
-                throw new ArgumentOutOfRangeException(nameof(keyCount), $"Unsupported key count: {keyCount}");
-            }
-            if (column < 0 || column >= row.Length)
-            {
-                Console.WriteLine($"[ERROR] Column index out of range for keyCount {keyCount}: {column}");
-                throw new ArgumentOutOfRangeException(nameof(column), $"Column index out of range for keyCount {keyCount}: {column}");
-            }
-            return row[column];
+            if (KeyValueMap.TryGetValue(keyCount, out int[]? row) && column >= 0 && column < row.Length) return row[column];
+            // 备选计算方式
+            return GetPositionX(keyCount, column + 1);
         }
 
-        public static int GetPositionX(int base_cs, int set_x)
+        public static int GetPositionX(int column, int index)
         {
-            set_x = ((set_x - 1) * 512 / base_cs) + (256 / base_cs);
-            return set_x;
+            // 拟合公式，结果四舍五入，和编辑器结果基本一致
+            return (index - 1) * 512 / column + 256 / column;
         }
     }
 }

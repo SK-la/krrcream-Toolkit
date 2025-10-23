@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -17,43 +18,70 @@ namespace krrTools.Utilities
 {
     public class StatusBarControl : UserControl
     {
-        private static readonly Brush PanelBackgroundBrush = new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
-        private static readonly Brush PanelBorderBrush = new SolidColorBrush(Color.FromArgb(32, 0, 0, 0));
-        private static readonly CornerRadius PanelCornerRadius = new(4);
+        private static readonly Brush panel_background_brush = new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
+        private static readonly Brush panel_border_brush = new SolidColorBrush(Color.FromArgb(32, 0, 0, 0));
+        private static readonly CornerRadius panel_corner_radius = new CornerRadius(4);
+        private readonly List<MenuItem> _backdropSubItems = new List<MenuItem>();
 
-        public ToggleButton TopmostToggle { get; private set; } = null!;
-        public ToggleButton RealTimeToggle { get; private set; } = null!;
+        private readonly StateBarManager _stateBarManager = null!;
+        private readonly List<MenuItem> _themeSubItems = new List<MenuItem>();
+        private MenuItem _accentMenuItem = null!;
+        private MenuItem _backdropMenuItem = null!;
+        private MenuItem _langMenuItem = null!;
+
+        // 菜单项引用，用于语言切换时更新
+        private MenuItem _themeMenuItem = null!;
 
         public StatusBarControl()
         {
             InitializeComponent();
+            LocalizationService.LanguageChanged += OnLanguageChanged;
         }
 
         public StatusBarControl(StateBarManager stateBarManager)
         {
+            _stateBarManager = stateBarManager;
             InitializeComponent();
-            
+            LocalizationService.LanguageChanged += OnLanguageChanged;
+
             // 设置实时预览开关的初始状态和点击事件
             RealTimeToggle.IsChecked = stateBarManager.IsMonitoringEnable;
-            RealTimeToggle.Click += (_, _) => 
-            {
-                stateBarManager.IsMonitoringEnable = RealTimeToggle.IsChecked ?? false;
-            };
+            RealTimeToggle.Click += (_, _) => { stateBarManager.IsMonitoringEnable = RealTimeToggle.IsChecked ?? false; };
         }
+
+        public ToggleButton TopmostToggle { get; private set; } = null!;
+        public ToggleButton RealTimeToggle { get; private set; } = null!;
 
         private void InitializeComponent()
         {
+            // 主容器：Grid，包含进度条行和状态栏行
+            var rootGrid = new Grid
+            {
+                RowDefinitions =
+                {
+                    new RowDefinition { Height = GridLength.Auto }, // 进度条行
+                    new RowDefinition { Height = GridLength.Auto } // 状态栏行
+                }
+            };
+
+            // 进度条
+            ProgressBar progressBar = BuildProgressBar();
+            System.Windows.Controls.Grid.SetRow(progressBar, 0);
+            rootGrid.Children.Add(progressBar);
+
+            // 状态栏Border
             var footer = new Border
             {
-                Background = PanelBackgroundBrush,
-                BorderBrush = PanelBorderBrush,
+                Background = panel_background_brush,
+                BorderBrush = panel_border_brush,
                 BorderThickness = new Thickness(1),
                 Height = double.NaN, // 动态高度
                 MinHeight = 32,
                 Padding = new Thickness(0, 4, 0, 4),
-                Margin = new Thickness(0, 4, 0, 0),
-                CornerRadius = PanelCornerRadius
+                Margin = new Thickness(0, 0, 0, 0),
+                CornerRadius = panel_corner_radius
             };
+            System.Windows.Controls.Grid.SetRow(footer, 1);
 
             // 用 Grid 实现6列分布，右侧按钮分别贴右
             var mainGrid = new Grid
@@ -80,7 +108,7 @@ namespace krrTools.Utilities
                 Margin = new Thickness(0, 0, 8, 0)
             };
             hyperlinkButton.SetBinding(ContentProperty,
-                new Binding("Value") { Source = Strings.FooterCopyright.GetLocalizedString() });
+                                       new Binding("Value") { Source = Strings.FooterCopyright.GetLocalizedString() });
             System.Windows.Controls.Grid.SetColumn(hyperlinkButton, 0);
 
             var githubLink = new HyperlinkButton
@@ -101,7 +129,8 @@ namespace krrTools.Utilities
                 Height = 32,
                 Margin = new Thickness(0, 0, 8, 0),
                 HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "置顶|Topmost"
             };
             System.Windows.Controls.Grid.SetColumn(TopmostToggle, 3);
 
@@ -115,7 +144,7 @@ namespace krrTools.Utilities
             };
             System.Windows.Controls.Grid.SetColumn(RealTimeToggle, 4);
 
-            var settingsButton = CreateSettingsButton();
+            Button settingsButton = CreateSettingsButton();
             settingsButton.HorizontalAlignment = HorizontalAlignment.Right;
             settingsButton.VerticalAlignment = VerticalAlignment.Center;
             System.Windows.Controls.Grid.SetColumn(settingsButton, 5);
@@ -127,12 +156,38 @@ namespace krrTools.Utilities
             mainGrid.Children.Add(settingsButton);
 
             footer.Child = mainGrid;
-            ApplyThemeSettings();
+            rootGrid.Children.Add(footer);
 
-            Content = footer;
+            Content = rootGrid;
         }
 
-        private static Button CreateSettingsButton()
+        private ProgressBar BuildProgressBar()
+        {
+            var progressBar = new ProgressBar
+            {
+                Height = 4,
+                Width = double.NaN,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0),
+                Minimum = 0,
+                Maximum = 100,
+                Background = Brushes.Transparent,
+                Foreground = Brushes.Coral,
+                BorderThickness = new Thickness(0)
+            };
+
+            progressBar.SetBinding(RangeBase.ValueProperty,
+                                   new Binding(nameof(StateBarManager.ProgressValue) + ".Value")
+                                       { Source = _stateBarManager });
+            progressBar.SetBinding(VisibilityProperty,
+                                   new Binding(nameof(StateBarManager.ProgressVisible) + ".Value")
+                                       { Source = _stateBarManager, Converter = new BooleanToVisibilityConverter() });
+
+            return progressBar;
+        }
+
+        private Button CreateSettingsButton()
         {
             var settingsButton = new Button
             {
@@ -147,96 +202,108 @@ namespace krrTools.Utilities
                 FontSize = 16
             };
 
-            var settingsMenu = CreateSettingsMenu();
+            ContextMenu settingsMenu = CreateSettingsMenu();
             settingsButton.ContextMenu = settingsMenu;
             settingsButton.Click += (_, _) => settingsButton.ContextMenu.IsOpen = true;
 
             return settingsButton;
         }
 
-        private static ContextMenu CreateSettingsMenu()
+        private ContextMenu CreateSettingsMenu()
         {
             var settingsMenu = new ContextMenu();
 
-            var themeMenuItem = CreateThemeMenuItem();
-            settingsMenu.Items.Add(themeMenuItem);
+            _themeMenuItem = CreateThemeMenuItem();
+            settingsMenu.Items.Add(_themeMenuItem);
 
-            var backdropMenuItem = CreateBackdropMenuItem();
-            settingsMenu.Items.Add(backdropMenuItem);
+            _backdropMenuItem = CreateBackdropMenuItem();
+            settingsMenu.Items.Add(_backdropMenuItem);
 
-            var accentMenuItem = CreateAccentMenuItem();
-            settingsMenu.Items.Add(accentMenuItem);
+            _accentMenuItem = CreateAccentMenuItem();
+            settingsMenu.Items.Add(_accentMenuItem);
 
-            var langMenuItem = CreateLanguageMenuItem();
-            settingsMenu.Items.Add(langMenuItem);
+            _langMenuItem = CreateLanguageMenuItem();
+            settingsMenu.Items.Add(_langMenuItem);
 
             return settingsMenu;
         }
 
-        private static MenuItem CreateThemeMenuItem()
+        private MenuItem CreateThemeMenuItem()
         {
             var themeMenuItem = new MenuItem
                 { Header = Strings.Localize(Strings.SettingsMenuTheme) };
+
             foreach (ApplicationTheme theme in Enum.GetValues(typeof(ApplicationTheme)))
             {
-                var themeHeader = theme switch
-                {
-                    ApplicationTheme.Light => Strings.Localize(Strings.ThemeLight),
-                    ApplicationTheme.Dark => Strings.Localize(Strings.ThemeDark),
-                    ApplicationTheme.HighContrast => Strings.Localize(Strings.ThemeHighContrast),
-                    _ => theme.ToString()
-                };
+                string themeHeader = theme switch
+                                     {
+                                         ApplicationTheme.Light => Strings.Localize(Strings.ThemeLight),
+                                         ApplicationTheme.Dark => Strings.Localize(Strings.ThemeDark),
+                                         ApplicationTheme.HighContrast => Strings.Localize(Strings.ThemeHighContrast),
+                                         _ => theme.ToString()
+                                     };
                 var themeItem = new MenuItem
                 {
                     Header = themeHeader,
                     IsCheckable = true,
-                    IsChecked = theme == GetSavedApplicationTheme()
+                    IsChecked = theme == GetSavedApplicationTheme(),
+                    Tag = theme
                 };
                 themeItem.Click += (_, _) =>
                 {
-                    foreach (var item in themeMenuItem.Items)
+                    foreach (object? item in themeMenuItem.Items)
+                    {
                         if (item is MenuItem mi)
                             mi.IsChecked = false;
+                    }
+
                     themeItem.IsChecked = true;
                     BaseOptionsManager.SetApplicationTheme(theme.ToString());
                     ApplyThemeSettings();
                 };
                 themeMenuItem.Items.Add(themeItem);
+                _themeSubItems.Add(themeItem);
             }
 
             return themeMenuItem;
         }
 
-        private static MenuItem CreateBackdropMenuItem()
+        private MenuItem CreateBackdropMenuItem()
         {
             var backdropMenuItem = new MenuItem
                 { Header = Strings.Localize(Strings.SettingsMenuBackdrop) };
+
             foreach (WindowBackdropType backdrop in Enum.GetValues(typeof(WindowBackdropType)))
             {
-                var backdropHeader = backdrop switch
-                {
-                    WindowBackdropType.None => Strings.Localize(Strings.BackdropNone),
-                    WindowBackdropType.Mica => Strings.Localize(Strings.BackdropMica),
-                    WindowBackdropType.Acrylic => Strings.Localize(Strings.BackdropAcrylic),
-                    WindowBackdropType.Tabbed => Strings.Localize(Strings.BackdropTabbed),
-                    _ => backdrop.ToString()
-                };
+                string backdropHeader = backdrop switch
+                                        {
+                                            WindowBackdropType.None => Strings.Localize(Strings.BackdropNone),
+                                            WindowBackdropType.Mica => Strings.Localize(Strings.BackdropMica),
+                                            WindowBackdropType.Acrylic => Strings.Localize(Strings.BackdropAcrylic),
+                                            WindowBackdropType.Tabbed => Strings.Localize(Strings.BackdropTabbed),
+                                            _ => backdrop.ToString()
+                                        };
                 var backdropItem = new MenuItem
                 {
                     Header = backdropHeader,
                     IsCheckable = true,
-                    IsChecked = backdrop == GetSavedWindowBackdropType()
+                    IsChecked = backdrop == GetSavedWindowBackdropType(),
+                    Tag = backdrop
                 };
                 backdropItem.Click += (_, _) =>
                 {
-                    foreach (var item in backdropMenuItem.Items)
+                    foreach (object? item in backdropMenuItem.Items)
+                    {
                         if (item is MenuItem mi)
                             mi.IsChecked = false;
+                    }
+
                     backdropItem.IsChecked = true;
                     BaseOptionsManager.SetWindowBackdropType(backdrop.ToString());
                     ApplyThemeSettings();
                 };
                 backdropMenuItem.Items.Add(backdropItem);
+                _backdropSubItems.Add(backdropItem);
             }
 
             return backdropMenuItem;
@@ -272,18 +339,68 @@ namespace krrTools.Utilities
 
         public static void ApplyThemeSettings()
         {
-            var theme = GetSavedApplicationTheme();
-            var backdrop = GetSavedWindowBackdropType();
-            var updateAccent = GetSavedUpdateAccent() ?? false;
+            ApplicationTheme theme = GetSavedApplicationTheme();
+            WindowBackdropType backdrop = GetSavedWindowBackdropType();
+            bool updateAccent = GetSavedUpdateAccent() ?? false;
             ApplicationThemeManager.Apply(theme, backdrop, updateAccent);
         }
 
-        private static ApplicationTheme GetSavedApplicationTheme() =>
-            Enum.TryParse<ApplicationTheme>(BaseOptionsManager.GetApplicationTheme(), out var theme) ? theme : ApplicationTheme.Light;
+        private static ApplicationTheme GetSavedApplicationTheme()
+        {
+            return Enum.TryParse(BaseOptionsManager.GetApplicationTheme(), out ApplicationTheme theme)
+                       ? theme
+                       : ApplicationTheme.Light;
+        }
 
-        private static WindowBackdropType GetSavedWindowBackdropType() =>
-            Enum.TryParse<WindowBackdropType>(BaseOptionsManager.GetWindowBackdropType(), out var backdrop) ? backdrop : WindowBackdropType.Acrylic;
+        private static WindowBackdropType GetSavedWindowBackdropType()
+        {
+            return Enum.TryParse(BaseOptionsManager.GetWindowBackdropType(), out WindowBackdropType backdrop)
+                       ? backdrop
+                       : WindowBackdropType.Acrylic;
+        }
 
-        private static bool? GetSavedUpdateAccent() => BaseOptionsManager.GetUpdateAccent();
+        private static bool? GetSavedUpdateAccent()
+        {
+            return BaseOptionsManager.GetUpdateAccent();
+        }
+
+        private void OnLanguageChanged()
+        {
+            _themeMenuItem.Header = Strings.Localize(Strings.SettingsMenuTheme);
+            _backdropMenuItem.Header = Strings.Localize(Strings.SettingsMenuBackdrop);
+            _accentMenuItem.Header = Strings.Localize(Strings.UpdateAccent);
+            _langMenuItem.Header = Strings.Localize(Strings.SettingsMenuLanguage);
+
+            // 更新主题子项
+            foreach (MenuItem item in _themeSubItems)
+            {
+                if (item.Tag is ApplicationTheme theme)
+                {
+                    item.Header = theme switch
+                                  {
+                                      ApplicationTheme.Light => Strings.Localize(Strings.ThemeLight),
+                                      ApplicationTheme.Dark => Strings.Localize(Strings.ThemeDark),
+                                      ApplicationTheme.HighContrast => Strings.Localize(Strings.ThemeHighContrast),
+                                      _ => theme.ToString()
+                                  };
+                }
+            }
+
+            // 更新背景子项
+            foreach (MenuItem item in _backdropSubItems)
+            {
+                if (item.Tag is WindowBackdropType backdrop)
+                {
+                    item.Header = backdrop switch
+                                  {
+                                      WindowBackdropType.None => Strings.Localize(Strings.BackdropNone),
+                                      WindowBackdropType.Mica => Strings.Localize(Strings.BackdropMica),
+                                      WindowBackdropType.Acrylic => Strings.Localize(Strings.BackdropAcrylic),
+                                      WindowBackdropType.Tabbed => Strings.Localize(Strings.BackdropTabbed),
+                                      _ => backdrop.ToString()
+                                  };
+                }
+            }
+        }
     }
 }

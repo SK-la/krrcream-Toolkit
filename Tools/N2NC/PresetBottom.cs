@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using krrTools.Core;
@@ -9,8 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace krrTools.Tools.N2NC
 {
-    // TODO: 未来抽象类，最好做成带+号的按钮列表组件，让模块自己去实例化
-    // 现在先这样写着，N2NC里有预设模版的备份
     public abstract class PresetBottom : Window
     {
         private readonly N2NCViewModel _viewModel;
@@ -18,18 +17,48 @@ namespace krrTools.Tools.N2NC
         private static readonly IReadOnlyDictionary<PresetKind, (string Name, N2NCOptions Options)> PresetTemplates
             = new Dictionary<PresetKind, (string, N2NCOptions)>
             {
-                [PresetKind.Default] = ("Default", CreatePreset(10, 1.0, 114514)),
-                [PresetKind.TenK] = ("10K Preset", CreatePreset(10, 2.0, 0)),
-                [PresetKind.EightK] = ("8K Preset", CreatePreset(8, 1.0, 0)),
-                [PresetKind.SevenK] = ("7K Preset", CreatePreset(7, 1.0, 0))
+                [PresetKind.Default] = ("Default", CreatePreset(opts =>
+                                           {
+                                               opts.TargetKeys.Value = 8;
+                                               opts.MaxKeys.Value = 8;
+                                               opts.MinKeys.Value = 2;
+                                               opts.TransformSpeed.Value = 5;
+                                               opts.Seed = 114514;
+                                               opts.SelectedKeyFlags = KeySelectionFlags.None;
+                                           })),
+                [PresetKind.TenK] = ("10K Preset", CreatePreset(opts =>
+                                        {
+                                            opts.TargetKeys.Value = 10;
+                                            opts.MaxKeys.Value = 8;
+                                            opts.MinKeys.Value = 2;
+                                            opts.TransformSpeed.Value = 4;
+                                            opts.Seed = 0;
+                                            opts.SelectedKeyFlags = (KeySelectionFlags)0b0001111110;
+                                        })),
+                [PresetKind.EightK] = ("8K Preset", CreatePreset(opts =>
+                                          {
+                                              opts.TargetKeys.Value = 8;
+                                              opts.MaxKeys.Value = 8;
+                                              opts.MinKeys.Value = 2;
+                                              opts.TransformSpeed.Value = 5;
+                                              opts.Seed = 0;
+                                              opts.SelectedKeyFlags = (KeySelectionFlags)0b0000011110;
+                                          })),
+                [PresetKind.SevenK] = ("7K Preset", CreatePreset(opts =>
+                                          {
+                                              opts.TargetKeys.Value = 7;
+                                              opts.MaxKeys.Value = 7;
+                                              opts.MinKeys.Value = 2;
+                                              opts.TransformSpeed.Value = 5;
+                                              opts.Seed = 0;
+                                              opts.SelectedKeyFlags = (KeySelectionFlags)0b0000001110;
+                                          }))
             };
 
-        private static N2NCOptions CreatePreset(double targetKeys, double transformSpeed, int seed)
+        private static N2NCOptions CreatePreset(Action<N2NCOptions> modifier)
         {
             var options = new N2NCOptions();
-            options.TargetKeys.Value = targetKeys;
-            options.TransformSpeed.Value = transformSpeed;
-            options.Seed = seed;
+            modifier(options);
             return options;
         }
 
@@ -53,7 +82,8 @@ namespace krrTools.Tools.N2NC
                     Dispatcher.BeginInvoke(new Action(OnLanguageChanged));
                     return;
                 }
-                var dc = DataContext;
+
+                object? dc = DataContext;
                 Content = null;
                 BuildUI();
                 DataContext = dc;
@@ -67,25 +97,30 @@ namespace krrTools.Tools.N2NC
         private void BuildUI()
         {
             Title = "Preset";
-            Width = 400; Height = 300;
+            Width = 400;
+            Height = 300;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
             var root = new StackPanel { Margin = new Thickness(16), VerticalAlignment = VerticalAlignment.Center };
 
             // 全局切换本地化，其他组件可参考实现，但英文状态下字体偏小，需要修复
-            foreach (var kv in PresetTemplates)
+            foreach (KeyValuePair<PresetKind, (string Name, N2NCOptions Options)> kv in PresetTemplates)
             {
-                var opts = kv.Value.Options;
+                N2NCOptions opts = kv.Value.Options;
 
                 // Use localized enum name (Description attribute) if available
-                var localized = LocalizationService.GetLocalizedEnumDisplayName(kv.Key);
+                string localized = LocalizationService.GetLocalizedEnumDisplayName(kv.Key);
                 var btn = new Button
                 {
                     Content = localized,
                     Margin = new Thickness(0, 0, 0, 8),
                     Height = 36
                 };
-                btn.Click += (_, _) => { ApplyPresetToViewModel(_viewModel, opts); Close(); };
+                btn.Click += (_, _) =>
+                {
+                    ApplyPresetToViewModel(_viewModel, opts);
+                    Close();
+                };
                 root.Children.Add(btn);
             }
 
@@ -95,22 +130,35 @@ namespace krrTools.Tools.N2NC
         // 备用的，N2N中有预设按钮，目前没加载
         public static N2NCOptions GetPresetOptions(PresetKind kind)
         {
-            if (PresetTemplates.TryGetValue(kind, out var entry))
+            if (PresetTemplates.TryGetValue(kind, out (string Name, N2NCOptions Options) entry))
                 return entry.Options;
-            return CreatePreset(10, 1.0, 114514);
+            return CreatePreset(opts =>
+            {
+                opts.TargetKeys.Value = 10;
+                opts.TransformSpeed.Value = 1.0;
+                opts.Seed = 114514;
+            });
         }
 
         public static IEnumerable<(PresetKind Kind, string Name, N2NCOptions Options)> GetPresetTemplates()
         {
-            foreach (var kv in PresetTemplates)
+            foreach (KeyValuePair<PresetKind, (string Name, N2NCOptions Options)> kv in PresetTemplates)
                 yield return (kv.Key, kv.Value.Name, kv.Value.Options);
         }
 
         // 添加获取枚举显示名称的方法
         public static string GetEnumDescription(PresetKind value)
         {
-            // 使用共享库的多语言支持功能
-            return LocalizationService.GetLocalizedEnumDisplayName(value);
+            // 返回原始的Description字符串以支持动态本地化
+            FieldInfo? field = value.GetType().GetField(value.ToString());
+
+            if (field != null)
+            {
+                var attr = Attribute.GetCustomAttribute(field, typeof(System.ComponentModel.DescriptionAttribute)) as System.ComponentModel.DescriptionAttribute;
+                return attr?.Description ?? value.ToString();
+            }
+
+            return value.ToString();
         }
 
         private static void ApplyPresetToViewModel(N2NCViewModel viewModel, N2NCOptions preset)
@@ -118,30 +166,9 @@ namespace krrTools.Tools.N2NC
             viewModel.TargetKeys = Convert.ToInt32(preset.TargetKeys.Value);
             viewModel.TransformSpeed = preset.TransformSpeed.Value;
             viewModel.Seed = preset.Seed;
-
-            if (preset.SelectedKeyFlags.HasValue)
-            {
-                viewModel.KeySelection = preset.SelectedKeyFlags.Value;
-            }
-            else if (preset.SelectedKeyTypes != null)
-            {
-                KeySelectionFlags flags = KeySelectionFlags.None;
-                foreach (var k in preset.SelectedKeyTypes)
-                {
-                    switch (k)
-                    {
-                        case 4: flags |= KeySelectionFlags.K4; break;
-                        case 5: flags |= KeySelectionFlags.K5; break;
-                        case 6: flags |= KeySelectionFlags.K6; break;
-                        case 7: flags |= KeySelectionFlags.K7; break;
-                        case 8: flags |= KeySelectionFlags.K8; break;
-                        case 9: flags |= KeySelectionFlags.K9; break;
-                        case 10: flags |= KeySelectionFlags.K10; break;
-                        case 11: flags |= KeySelectionFlags.K10Plus; break;
-                    }
-                }
-                viewModel.KeySelection = flags;
-            }
+            viewModel.MaxKeys = Convert.ToInt32(preset.MaxKeys.Value);
+            viewModel.MinKeys = Convert.ToInt32(preset.MinKeys.Value);
+            viewModel.KeySelection = preset.SelectedKeyFlags ?? KeySelectionFlags.None;
         }
     }
 }

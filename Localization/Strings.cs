@@ -5,7 +5,13 @@ namespace krrTools.Localization
     /// </summary>
     public static class Strings
     {
-        public const string WindowTitle = "krrcream's Toolkit V2.3.1";
+        public const string WindowTitle = "krrcream's Toolkit V3.0.0";
+
+        // Metadeta
+        public const string ConverterTag = "Converter";
+        public const string KRRLNTag = "LN.";
+        public const string NToNCTag = "NtNC.";
+        public const string DPTag = "DP.";
 
         // Tab headers
         public const string TabN2NC = "NtoN Converter|NtoN转换器";
@@ -69,21 +75,20 @@ namespace krrTools.Localization
         public const string InstructionsLink = "Instructions|使用说明";
 
         // KRR LN Transformer texts
+        public const string LengthThresholdLabel = "Length Threshold {0}|长度阈值 {0}";
         public const string KRRShortLNHeader = "Short LN|短面";
         public const string KRRShortPercentageLabel = "Short LN {0}%|短面占比 {0}%";
-        public const string KRRShortLevelLabel = "Short Level {0}|短面强度 {0}";
+        public const string KRRShortLevelLabel = "Short Length {0}|短面长度 {0}";
         public const string KRRShortLimitLabel = "Short Limit {0}|短面限制 {0}";
         public const string KRRShortRandomLabel = "Short Random {0}|短面随机 {0}";
         public const string KRRLongLNHeader = "Long LN|长面条";
         public const string KRRLongPercentageLabel = "Long LN {0}%|长面占比 {0}%";
-        public const string KRRLongLevelLabel = "Long Level {0}|长面强度 {0}";
+        public const string KRRLongLevelLabel = "Long Length {0}%|长面长度 {0}%";
         public const string KRRLongLimitLabel = "Long Limit {0}|长面限制 {0}";
         public const string KRRLongRandomLabel = "Long Random {0}|长面随机 {0}";
         public const string KRRAlignLabel = "Align {0}|对齐 {0}";
-         public const string ProcessOriginalLabel = "Process Original|处理原始谱面";
-
-        public const string LengthThresholdLabel = "Length Threshold {0}|长度阈值 {0}";
-        public const string KRRLNAlignLabel = "Long&Short Align {0}|LN长短对齐 {0}";
+        public const string ProcessOriginalLabel = "Process Original|处理原始谱面";
+        // public const string KRRLNAlignLabel = "Long&Short Align {0}|LN长短对齐 {0}";
 
         // 通用控件名称
         public const string ODSliderLabel = "OD {0}|判定难度 {0}";
@@ -92,7 +97,6 @@ namespace krrTools.Localization
         public const string SeedButtonLabel = "Seed|种子";
         public const string SeedGenerateLabel = "Generate|随机生成";
         public const string SeedGenerateTooltip = "Generate a random seed value|生成一个随机种子值";
-
 
         // DP Tool专用
         public const string DPLeftMaxKeysTemplate = "Max Keys: {0}|最大键数: {0}";
@@ -127,7 +131,8 @@ namespace krrTools.Localization
         public const string ConversionNoOutputMessage = "Conversion did not produce any output.";
         public const string DPSettingsLoadFallback = "DP settings failed to load here — showing fallback. If this persists, try reopening the DP tool.";
         public const string LVSettingsLoadFallback = "LV Calculator failed to load here — showing fallback.";
-        public const string GetFilesSettingsLoadFallback = "osu! file manager failed to load here — showing fallback.\nTry opening it in a separate window if the issue persists.|osu! 文件管理器加载失败 — 显示备用方案。\n如果问题持续，请尝试在单独窗口中打开。";
+        public const string GetFilesSettingsLoadFallback =
+            "osu! file manager failed to load here — showing fallback.\nTry opening it in a separate window if the issue persists.|osu! 文件管理器加载失败 — 显示备用方案。\n如果问题持续，请尝试在单独窗口中打开。";
 
         // Error messages
         public const string ErrorProcessingFile = "Error processing file|处理文件时出错";
@@ -180,6 +185,8 @@ namespace krrTools.Localization
         public const string OriginalHint = "Original|原始";
         public const string ConvertedHint = "Converted|结果";
         public const string DropHint = "Drag & Drop .osu files in here|将 .osu 文件拖到此区域";
+        public const string DroppedPrefix = "[Dropped] |[拖入] ";
+        public const string ListenedPrefix = "[Listened] |[监听] ";
         public const string StartButtonText = "Start|开始转换";
         public const string DropFilesHint = "{0} file(s) staged. Click Start to convert.|已暂存 {0} 个文件，点击开始转换。";
         public const string NoDataAvailable = "No data available|无可用数据";
@@ -212,5 +219,4 @@ namespace krrTools.Localization
             return string.Format(localized, args);
         }
     }
-
 }
