@@ -1,5 +1,9 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
 using krrTools.Bindable;
 using Microsoft.Extensions.Logging;
+using OsuParsers.Beatmaps;
 
 namespace krrTools.Beatmaps
 {
@@ -8,10 +12,11 @@ namespace krrTools.Beatmaps
     /// </summary>
     public class BeatmapAnalysisService
     {
-        private readonly BeatmapCacheManager _cacheManager = new();
+        private readonly BeatmapCacheManager _cacheManager = new BeatmapCacheManager();
 
         // 公共属性注入事件总线
-        [Inject] private IEventBus EventBus { get; set; } = null!;
+        [Inject]
+        private IEventBus EventBus { get; set; } = null!;
 
         public BeatmapAnalysisService()
         {
@@ -30,9 +35,7 @@ namespace krrTools.Beatmaps
             if (string.IsNullOrEmpty(filePath) ||
                 !File.Exists(filePath) ||
                 !Path.GetExtension(filePath).Equals(".osu", StringComparison.OrdinalIgnoreCase))
-            {
                 return;
-            }
 
             await Task.Run(async () =>
             {
@@ -43,35 +46,35 @@ namespace krrTools.Beatmaps
 
                     // 使用 using 语句确保资源自动释放
                     using var beatmapWrapper = BeatmapWrapper.Create(filePath);
+
                     if (beatmapWrapper?.Beatmap == null)
                     {
                         Logger.WriteLine(LogLevel.Error, "[BeatmapAnalysisService] Failed to decode beatmap: {0}",
-                            filePath);
+                                         filePath);
                         return;
                     }
 
-                    var beatmap = beatmapWrapper.Beatmap;
+                    Beatmap? beatmap = beatmapWrapper.Beatmap;
 
                     // 获取基础信息和性能分析
-                    var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(beatmap);
-                    var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(beatmap);
+                    OsuAnalysisBasic basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(beatmap);
+                    OsuAnalysisPerformance? performance = await OsuAnalyzer.AnalyzeAdvancedAsync(beatmap);
 
                     Logger.WriteLine(LogLevel.Debug,
-                        "[BeatmapAnalysisService] Beatmap analyzed: {0}, Keys: {1}, SR: {2:F2}",
-                        basicInfo.Title, basicInfo.KeyCount, performance?.XXY_SR ?? 0);
-
+                                     "[BeatmapAnalysisService] Beatmap analyzed: {0}, Keys: {1}, SR: {2:F2}",
+                                     basicInfo.Title, basicInfo.KeyCount, performance?.XXY_SR ?? 0);
 
                     // 发布专门的分析结果变化事件
                     EventBus.Publish(new AnalysisResultChangedEvent
                     {
                         AnalysisBasic = basicInfo,
-                        AnalysisPerformance = performance,
+                        AnalysisPerformance = performance
                     });
                 }
                 catch (Exception ex)
                 {
                     Logger.WriteLine(LogLevel.Error, "[BeatmapAnalysisService] ProcessBeatmapAsync failed: {0}",
-                        ex.Message);
+                                     ex.Message);
                 }
             });
         }

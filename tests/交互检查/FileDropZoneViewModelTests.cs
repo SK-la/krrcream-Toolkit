@@ -9,155 +9,142 @@ using krrTools.Utilities;
 using Moq;
 using Xunit;
 
-namespace krrTools.Tests.交互检查;
-
-public class FileDropZoneViewModelTests
+namespace krrTools.Tests.交互检查
 {
-    private readonly Mock<IModuleManager> _mockModuleManager;
-    private readonly Mock<IEventBus> _mockEventBus;
+    public class FileDropZoneViewModelTests
+    {
+        private readonly Mock<IModuleManager> _mockModuleManager;
+        private readonly Mock<IEventBus> _mockEventBus;
 
-    public FileDropZoneViewModelTests()
-    {
-        _mockModuleManager = new Mock<IModuleManager>();
-        _mockEventBus = new Mock<IEventBus>();
-    }
-    [Fact]
-    public void Constructor_ShouldInitializeWithDefaultValues()
-    {
-        // Arrange - Create instances in STA thread for WPF components
-        static ConverterEnum getActiveTabTag()
+        public FileDropZoneViewModelTests()
         {
-            return ConverterEnum.N2NC;
+            _mockModuleManager = new Mock<IModuleManager>();
+            _mockEventBus = new Mock<IEventBus>();
         }
 
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
-        var viewModel = new FileDropZoneViewModel(fileDispatcher)
+        [Fact]
+        public void Constructor_ShouldInitializeWithDefaultValues()
         {
-            EventBus = _mockEventBus.Object,
-            GetActiveTabTag = getActiveTabTag
-        };
+            // Arrange - Create instances in STA thread for WPF components
+            static ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
 
-        // Assert
-        Assert.False(viewModel.IsConversionEnabled);
-        Assert.NotNull(viewModel.DisplayText);
-    }
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
+            var viewModel = new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
 
-    [Fact]
-    public void SetFiles_WithValidFiles_ShouldEnableConversion()
-    {
-        // Arrange
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
-
-        ConverterEnum getActiveTabTag()
-        {
-            return ConverterEnum.N2NC;
+            // Assert
+            Assert.False(viewModel.IsConversionEnabled);
+            Assert.NotNull(viewModel.DisplayText);
         }
 
-        var viewModel = new FileDropZoneViewModel(fileDispatcher)
+        [Fact]
+        public void SetFiles_WithValidFiles_ShouldEnableConversion()
         {
-            EventBus = _mockEventBus.Object,
-            GetActiveTabTag = getActiveTabTag
-        };
+            // Arrange
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
 
-        var testFiles = new[] { "test1.osu", "test2.osu" };
-        var filesDroppedEventFired = false;
-        string[]? droppedFiles = null;
+            ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
 
-        viewModel.FilesDropped += (_, files) =>
-        {
-            filesDroppedEventFired = true;
-            droppedFiles = files;
-        };
+            var viewModel = new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
 
-        // Act
-        viewModel.SetFiles(testFiles);
+            string[] testFiles = new[] { "test1.osu", "test2.osu" };
+            bool filesDroppedEventFired = false;
+            string[]? droppedFiles = null;
 
-        // Assert
-        Assert.True(viewModel.IsConversionEnabled);
-        Assert.True(filesDroppedEventFired);
-        Assert.Equal(testFiles, droppedFiles);
-    }
+            viewModel.FilesDropped += (_, files) =>
+            {
+                filesDroppedEventFired = true;
+                droppedFiles = files;
+            };
 
-    [Fact]
-    public void SetFiles_WithNullFiles_ShouldDisableConversion()
-    {
-        // Arrange
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
+            // Act
+            viewModel.SetFiles(testFiles);
 
-        static ConverterEnum getActiveTabTag()
-        {
-            return ConverterEnum.N2NC;
+            // Assert
+            Assert.True(viewModel.IsConversionEnabled);
+            Assert.True(filesDroppedEventFired);
+            Assert.Equal(testFiles, droppedFiles);
         }
 
-        var viewModel = new FileDropZoneViewModel(fileDispatcher)
+        [Fact]
+        public void SetFiles_WithNullFiles_ShouldDisableConversion()
         {
-            EventBus = _mockEventBus.Object,
-            GetActiveTabTag = getActiveTabTag
-        };
+            // Arrange
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
 
-        // First enable conversion, then test disabling
-        viewModel.SetFiles(["test.osu"]);
+            static ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
 
-        // Act
-        viewModel.SetFiles(null);
+            var viewModel = new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
 
-        // Assert
-        Assert.False(viewModel.IsConversionEnabled);
-    }
+            // First enable conversion, then test disabling
+            viewModel.SetFiles(["test.osu"]);
 
-    [Fact]
-    public void PropertyChanged_ShouldFireWhenFilesChange()
-    {
-        // Arrange
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
+            // Act
+            viewModel.SetFiles(null);
 
-        ConverterEnum getActiveTabTag()
-        {
-            return ConverterEnum.N2NC;
+            // Assert
+            Assert.False(viewModel.IsConversionEnabled);
         }
 
-        var viewModel = new FileDropZoneViewModel(fileDispatcher)
+        [Fact]
+        public void PropertyChanged_ShouldFireWhenFilesChange()
         {
-            EventBus = _mockEventBus.Object,
-            GetActiveTabTag = getActiveTabTag
-        };
+            // Arrange
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
 
-        var propertyChangedEvents = new List<PropertyChangedEventArgs>();
-        viewModel.PropertyChanged += (_, e) => propertyChangedEvents.Add(e);
+            ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
 
-        // Act
-        viewModel.SetFiles(["test.osu"]);
+            var viewModel = new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
 
-        // Assert
-        Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(viewModel.DisplayText));
-        Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(viewModel.IsConversionEnabled));
-    }
+            var propertyChangedEvents = new List<PropertyChangedEventArgs>();
+            viewModel.PropertyChanged += (_, e) => propertyChangedEvents.Add(e);
 
-    [Fact]
-    public void DisplayText_ShouldUpdateWhenFilesChange()
-    {
-        // Arrange
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
+            // Act
+            viewModel.SetFiles(["test.osu"]);
 
-        static ConverterEnum getActiveTabTag()
-        {
-            return ConverterEnum.N2NC;
+            // Assert
+            Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(viewModel.DisplayText));
+            Assert.Contains(propertyChangedEvents, e => e.PropertyName == nameof(viewModel.IsConversionEnabled));
         }
 
-        var viewModel = new FileDropZoneViewModel(fileDispatcher)
+        [Fact]
+        public void DisplayText_ShouldUpdateWhenFilesChange()
         {
-            EventBus = _mockEventBus.Object,
-            GetActiveTabTag = getActiveTabTag
-        };
+            // Arrange
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
 
-        var initialText = viewModel.DisplayText;
+            static ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
 
-        // Act
-        viewModel.SetFiles(["test1.osu", "test2.osu"]);
-        var updatedText = viewModel.DisplayText;
+            var viewModel = new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
 
-        // Assert
-        Assert.NotEqual(initialText, updatedText);
-        Assert.Contains("2", updatedText); // Should indicate 2 files
+            string initialText = viewModel.DisplayText;
+
+            // Act
+            viewModel.SetFiles(["test1.osu", "test2.osu"]);
+            string updatedText = viewModel.DisplayText;
+
+            // Assert
+            Assert.NotEqual(initialText, updatedText);
+            Assert.Contains("2", updatedText); // Should indicate 2 files
+        }
     }
 }

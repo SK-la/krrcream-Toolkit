@@ -1,6 +1,13 @@
-﻿using System.Collections.ObjectModel;
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using ClosedXML.Excel;
@@ -24,20 +31,20 @@ namespace krrTools.Tools.KRRLVAnalysis
     {
         // private readonly SemaphoreSlim _semaphore = new(100, 100);
 
-        [Inject] private StateBarManager StateBarManager { get; set; } = null!;
+        [Inject]
+        private StateBarManager StateBarManager { get; set; } = null!;
 
-        public Bindable<string> PathInput { get; set; } = new(string.Empty);
+        public Bindable<string> PathInput { get; set; } = new Bindable<string>(string.Empty);
 
-        public Bindable<ObservableCollection<KRRLVAnalysisItem>> OsuFiles { get; set; } =
-            new(new ObservableCollection<KRRLVAnalysisItem>());
+        public Bindable<ObservableCollection<KRRLVAnalysisItem>> OsuFiles { get; set; } = new Bindable<ObservableCollection<KRRLVAnalysisItem>>(new ObservableCollection<KRRLVAnalysisItem>());
 
         private int _advancedAnalysisCompletedCount;
-        
+
         // 批处理并发：50个文件为一组并行处理
         private const int BatchSize = 50;
 
-        private Bindable<int> TotalCount { get; set; } = new();
-        public Bindable<bool> IsProcessing { get; set; } = new();
+        private Bindable<int> TotalCount { get; set; } = new Bindable<int>();
+        public Bindable<bool> IsProcessing { get; set; } = new Bindable<bool>();
 
         public KRRLVAnalysisViewModel()
         {
@@ -62,7 +69,8 @@ namespace krrTools.Tools.KRRLVAnalysis
                     // 创建beatmap对象，整个分析过程复用
                     // using var beatmapWrapper = BeatmapWrapper.Create(item.FilePath!);
                     // if (beatmapWrapper?.Beatmap == null)
-                    var beatmap = BeatmapDecoder.Decode(item.FilePath!);
+                    Beatmap? beatmap = BeatmapDecoder.Decode(item.FilePath!);
+
                     if (beatmap == null)
                     {
                         item.ErrorMessage = $"无法解析文件: {item.FilePath}";
@@ -80,13 +88,14 @@ namespace krrTools.Tools.KRRLVAnalysis
 
                     // 高级分析完成后更新进度计数器
                     Interlocked.Increment(ref _advancedAnalysisCompletedCount);
-                    
+
                     // 更新进度条
-                    var completed = _advancedAnalysisCompletedCount;
-                    var total = TotalCount.Value;
+                    int completed = _advancedAnalysisCompletedCount;
+                    int total = TotalCount.Value;
+
                     if (total > 0)
                     {
-                        var progress = (double)completed / total * 100;
+                        double progress = (double)completed / total * 100;
                         StateBarManager.ProgressValue.Value = progress;
                     }
                 }
@@ -95,7 +104,7 @@ namespace krrTools.Tools.KRRLVAnalysis
                     item.ErrorMessage = $"分析错误: {ex.Message}";
                     item.Phase = AnalysisStatus.Error;
                     // 即使出错也要更新计数器，避免进度条卡住
-                    Interlocked.Increment(ref _advancedAnalysisCompletedCount);        
+                    Interlocked.Increment(ref _advancedAnalysisCompletedCount);
                 }
             });
         }
@@ -114,26 +123,26 @@ namespace krrTools.Tools.KRRLVAnalysis
                 StateBarManager.ProgressValue.Value = 0;
 
                 var preparationStopwatch = Stopwatch.StartNew();
-                
+
                 // 异步执行文件枚举并创建分析项目，避免阻塞UI
-                var allAnalysisItems = await Task.Run(() =>
+                List<KRRLVAnalysisItem> allAnalysisItems = await Task.Run(() =>
                 {
                     return BeatmapFileHelper.EnumerateOsuFiles(files)
-                        .Select(file => new KRRLVAnalysisItem
-                        {
-                            FilePath = file,
-                            Phase = AnalysisStatus.Waiting
-                        }).ToList();
+                                            .Select(file => new KRRLVAnalysisItem
+                                             {
+                                                 FilePath = file,
+                                                 Phase = AnalysisStatus.Waiting
+                                             }).ToList();
                 });
 
                 TotalCount.Value = allAnalysisItems.Count;
 
                 preparationStopwatch.Stop();
                 Logger.WriteLine(LogLevel.Information,
-                    $"[KRRLVAnalysisViewModel] 准备阶段完成: {allAnalysisItems.Count} 个文件，耗时 {preparationStopwatch.ElapsedMilliseconds}ms");
+                                 $"[KRRLVAnalysisViewModel] 准备阶段完成: {allAnalysisItems.Count} 个文件，耗时 {preparationStopwatch.ElapsedMilliseconds}ms");
 
                 // 立即添加所有项目到UI，避免延迟
-                foreach (var item in allAnalysisItems)
+                foreach (KRRLVAnalysisItem item in allAnalysisItems)
                     OsuFiles.Value.Add(item);
 
                 // 合并为单个task：每个文件先处理基础信息（立即更新UI），再处理高级分析
@@ -142,15 +151,15 @@ namespace krrTools.Tools.KRRLVAnalysis
                 // 批处理并发：每50个文件一组
                 for (int i = 0; i < allAnalysisItems.Count; i += BatchSize)
                 {
-                    var batch = allAnalysisItems.Skip(i).Take(BatchSize);
-                    var batchTasks = batch.Select(item => CreateCombinedAnalysisTask(item)).ToList();
+                    IEnumerable<KRRLVAnalysisItem> batch = allAnalysisItems.Skip(i).Take(BatchSize);
+                    List<Task> batchTasks = batch.Select(item => CreateCombinedAnalysisTask(item)).ToList();
                     allAnalysisTasks.AddRange(batchTasks);
                 }
 
                 // 追踪处理性能
                 var analysisStopwatch = Stopwatch.StartNew();
 
-                var analysisTask = Task.WhenAll(allAnalysisTasks).ContinueWith(_ =>
+                Task analysisTask = Task.WhenAll(allAnalysisTasks).ContinueWith(_ =>
                 {
                     analysisStopwatch.Stop();
                     Logger.WriteLine(LogLevel.Information, $"[KRRLVAnalysisViewModel] 所有分析完成，耗时 {analysisStopwatch.ElapsedMilliseconds}ms");
@@ -158,29 +167,29 @@ namespace krrTools.Tools.KRRLVAnalysis
 
                 // 等待所有分析完成
                 await analysisTask;
-                
+
                 // 分批处理已完成，继续后续清理工作
 
                 await FinalizeUIUpdates();
 
 #pragma warning disable CS4014
                 Application.Current.Dispatcher.BeginInvoke((Action)(() =>
-                {
-                    Logger.WriteLine(LogLevel.Debug,
-                        $"Processing completed: FinalValue={StateBarManager.ProgressValue.Value:F1}%");
+                                                                       {
+                                                                           Logger.WriteLine(LogLevel.Debug,
+                                                                                            $"Processing completed: FinalValue={StateBarManager.ProgressValue.Value:F1}%");
 
-                    stopwatch.Stop();
-                    var totalFiles = TotalCount.Value;
-                    var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
-                    var speed = totalFiles / elapsedSeconds;
-                    Logger.WriteLine(LogLevel.Information,
-                        "[KRRLVAnalysisViewModel] {0}个文件分析完成，用时: {1:F2}s，速度: {2:F1}个/s",
-                        totalFiles, elapsedSeconds, speed);
+                                                                           stopwatch.Stop();
+                                                                           int totalFiles = TotalCount.Value;
+                                                                           double elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+                                                                           double speed = totalFiles / elapsedSeconds;
+                                                                           Logger.WriteLine(LogLevel.Information,
+                                                                                            "[KRRLVAnalysisViewModel] {0}个文件分析完成，用时: {1:F2}s，速度: {2:F1}个/s",
+                                                                                            totalFiles, elapsedSeconds, speed);
 
-                    IsProcessing.Value = false;
-                    StateBarManager.ProgressValue.Value = 100;
-                }), DispatcherPriority.Background);
-                
+                                                                           IsProcessing.Value = false;
+                                                                           StateBarManager.ProgressValue.Value = 100;
+                                                                       }), DispatcherPriority.Background);
+
                 // 异步执行内存清理，避免阻塞UI线程
                 _ = Task.Run(() => PerformMemoryCleanup());
             }
@@ -208,7 +217,7 @@ namespace krrTools.Tools.KRRLVAnalysis
                     catch (Exception ex)
                     {
                         Logger.WriteLine(LogLevel.Error,
-                            $"FinalizeUIUpdates: Error in final UI update - {ex.Message}");
+                                         $"FinalizeUIUpdates: Error in final UI update - {ex.Message}");
                     }
                 });
             });
@@ -241,7 +250,7 @@ namespace krrTools.Tools.KRRLVAnalysis
                 GC.Collect(2, GCCollectionMode.Optimized, false);
 
                 Logger.WriteLine(LogLevel.Information,
-                    "[KRRLVAnalysisViewModel] Memory cleanup completed, processed count reset");
+                                 "[KRRLVAnalysisViewModel] Memory cleanup completed, processed count reset");
             }
             catch (Exception ex)
             {
@@ -254,7 +263,8 @@ namespace krrTools.Tools.KRRLVAnalysis
         [RelayCommand]
         private void Browse()
         {
-            var selected = FilesHelper.ShowFolderBrowserDialog("选择文件夹");
+            string selected = FilesHelper.ShowFolderBrowserDialog("选择文件夹");
+
             if (!string.IsNullOrEmpty(selected))
             {
                 PathInput.Value = selected;
@@ -266,6 +276,7 @@ namespace krrTools.Tools.KRRLVAnalysis
         private void OpenPath()
         {
             if (!string.IsNullOrEmpty(PathInput.Value))
+            {
                 try
                 {
                     Process.Start(new ProcessStartInfo
@@ -278,6 +289,7 @@ namespace krrTools.Tools.KRRLVAnalysis
                 {
                     Console.WriteLine($"[ERROR] 无法打开路径: {ex.Message}");
                 }
+            }
         }
 
         [RelayCommand]
@@ -293,8 +305,8 @@ namespace krrTools.Tools.KRRLVAnalysis
 
             if (saveDialog.ShowDialog() == true)
             {
-                var filePath = saveDialog.FileName;
-                var extension = Path.GetExtension(filePath).ToLower();
+                string filePath = saveDialog.FileName;
+                string extension = Path.GetExtension(filePath).ToLower();
 
                 try
                 {
@@ -329,18 +341,18 @@ namespace krrTools.Tools.KRRLVAnalysis
             var csv = new StringBuilder();
 
             // 使用共享的导出属性配置
-            var exportProperties = KRRLVAnalysisColumnConfig.ExportProperties;
+            (string Property, string Header)[] exportProperties = KRRLVAnalysisColumnConfig.ExportProperties;
 
             // 添加CSV头部
             csv.AppendLine(string.Join(",", exportProperties.Select(p => p.Header)));
 
             // 添加数据行
-            foreach (var file in OsuFiles.Value)
+            foreach (KRRLVAnalysisItem file in OsuFiles.Value)
             {
-                var values = exportProperties.Select(prop =>
+                IEnumerable<string> values = exportProperties.Select(prop =>
                 {
                     // 直接从KRRLVAnalysisItem获取属性值
-                    var property = typeof(KRRLVAnalysisItem).GetProperty(prop.Property);
+                    PropertyInfo? property = typeof(KRRLVAnalysisItem).GetProperty(prop.Property);
                     object? value = property?.GetValue(file);
 
                     // 格式化数值类型
@@ -361,27 +373,25 @@ namespace krrTools.Tools.KRRLVAnalysis
         private void ExportToExcel(string filePath)
         {
             using var workbook = new XLWorkbook();
-            var worksheet = workbook.Worksheets.Add("KRR LV Analysis");
+            IXLWorksheet worksheet = workbook.Worksheets.Add("KRR LV Analysis");
 
             // 使用共享的导出属性配置
-            var exportProperties = KRRLVAnalysisColumnConfig.ExportProperties;
+            (string Property, string Header)[] exportProperties = KRRLVAnalysisColumnConfig.ExportProperties;
 
             // 添加头部
-            for (var i = 0; i < exportProperties.Length; i++)
-            {
-                worksheet.Cell(1, i + 1).Value = exportProperties[i].Header;
-            }
+            for (int i = 0; i < exportProperties.Length; i++) worksheet.Cell(1, i + 1).Value = exportProperties[i].Header;
 
             // 添加数据行
-            var row = 2;
-            foreach (var file in OsuFiles.Value)
+            int row = 2;
+
+            foreach (KRRLVAnalysisItem file in OsuFiles.Value)
             {
-                for (var col = 0; col < exportProperties.Length; col++)
+                for (int col = 0; col < exportProperties.Length; col++)
                 {
-                    var propName = exportProperties[col].Property;
+                    string propName = exportProperties[col].Property;
 
                     // 直接从KRRLVAnalysisItem获取属性值
-                    var property = typeof(KRRLVAnalysisItem).GetProperty(propName);
+                    PropertyInfo? property = typeof(KRRLVAnalysisItem).GetProperty(propName);
                     object? value = property?.GetValue(file);
 
                     worksheet.Cell(row, col + 1).Value = Convert.ToString(value ?? "");

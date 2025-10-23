@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Reflection;
 using krrTools.Beatmaps;
 using krrTools.Bindable;
@@ -8,157 +9,159 @@ using krrTools.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace krrTools.Tests.交互检查;
-
-public class ListenerViewModelTests
+namespace krrTools.Tests.交互检查
 {
-    public ListenerViewModelTests()
+    public class ListenerViewModelTests
     {
-        // Setup dependency injection for tests using reflection
-        var services = new ServiceCollection();
-        services.AddSingleton<IEventBus, EventBus>();
-        services.AddSingleton<StateBarManager>();
-        services.AddSingleton<OsuMonitorService>();
-        services.AddSingleton<BeatmapAnalysisService>();
-        var serviceProvider = services.BuildServiceProvider();
-        
-        // Use reflection to set the private Services property
-        var servicesProperty = typeof(App).GetProperty("Services", BindingFlags.Public | BindingFlags.Static);
-        servicesProperty?.SetValue(null, serviceProvider);
-        
-        // Reset global settings to defaults for each test
-        ResetGlobalSettingsToDefaults();
-    }
-    
-    private void ResetGlobalSettingsToDefaults()
-    {
-        var globalSettings = BaseOptionsManager.GetGlobalSettings();
-        globalSettings.N2NCHotkey.Value = "Ctrl+Shift+N";
-        globalSettings.DPHotkey.Value = "Ctrl+Shift+D";
-        globalSettings.KRRLNHotkey.Value = "Ctrl+Shift+K";
-    }
-    [Fact]
-    public void Constructor_ShouldInitializeWithDefaultValues()
-    {
-        // Act
-        var viewModel = new ListenerViewModel();
+        public ListenerViewModelTests()
+        {
+            // Setup dependency injection for tests using reflection
+            var services = new ServiceCollection();
+            services.AddSingleton<IEventBus, EventBus>();
+            services.AddSingleton<StateBarManager>();
+            services.AddSingleton<OsuMonitorService>();
+            services.AddSingleton<BeatmapAnalysisService>();
+            ServiceProvider serviceProvider = services.BuildServiceProvider();
 
-        // Assert
-        Assert.NotNull(viewModel);
-        Assert.NotNull(viewModel.GlobalSettings);
-        Assert.NotNull(viewModel.BrowseCommand);
-    }
+            // Use reflection to set the private Services property
+            PropertyInfo? servicesProperty = typeof(App).GetProperty("Services", BindingFlags.Public | BindingFlags.Static);
+            servicesProperty?.SetValue(null, serviceProvider);
 
-    [Fact]
-    public void Config_ShouldHaveDefaultValues()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
+            // Reset global settings to defaults for each test
+            ResetGlobalSettingsToDefaults();
+        }
 
-        // Assert
-        Assert.NotNull(viewModel.GlobalSettings);
-        Assert.Equal("Ctrl+Shift+N", viewModel.N2NCHotkey);
-        Assert.Equal("Ctrl+Shift+D", viewModel.DPHotkey);
-        Assert.Equal("Ctrl+Shift+K", viewModel.KRRLNHotkey);
-    }
+        private void ResetGlobalSettingsToDefaults()
+        {
+            GlobalSettings globalSettings = BaseOptionsManager.GetGlobalSettings();
+            globalSettings.N2NCHotkey.Value = "Ctrl+Shift+N";
+            globalSettings.DPHotkey.Value = "Ctrl+Shift+D";
+            globalSettings.KRRLNHotkey.Value = "Ctrl+Shift+K";
+        }
 
-    [Fact]
-    public void CurrentOsuFilePath_ShouldStartEmpty()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
+        [Fact]
+        public void Constructor_ShouldInitializeWithDefaultValues()
+        {
+            // Act
+            var viewModel = new ListenerViewModel();
 
-        // Act
-        var initialPath = viewModel.MonitorOsuFilePath;
+            // Assert
+            Assert.NotNull(viewModel);
+            Assert.NotNull(viewModel.GlobalSettings);
+            Assert.NotNull(viewModel.BrowseCommand);
+        }
 
-        // Assert
-        Assert.Empty(initialPath);
-    }
+        [Fact]
+        public void Config_ShouldHaveDefaultValues()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
 
-    [Fact]
-    public void SetN2NCHotkey_ShouldUpdateConfig()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
-        var newHotkey = "Ctrl+Alt+N";
+            // Assert
+            Assert.NotNull(viewModel.GlobalSettings);
+            Assert.Equal("Ctrl+Shift+N", viewModel.N2NCHotkey);
+            Assert.Equal("Ctrl+Shift+D", viewModel.DPHotkey);
+            Assert.Equal("Ctrl+Shift+K", viewModel.KRRLNHotkey);
+        }
 
-        // Act
-        viewModel.SetN2NCHotkey(newHotkey);
+        [Fact]
+        public void CurrentOsuFilePath_ShouldStartEmpty()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
 
-        // Assert
-        // We can't easily verify the global settings change, but method shouldn't throw
-        Assert.NotNull(viewModel);
-    }
+            // Act
+            string initialPath = viewModel.MonitorOsuFilePath;
 
-    [Fact]
-    public void SetDPHotkey_ShouldUpdateConfig()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
-        var newHotkey = "Ctrl+Alt+D";
+            // Assert
+            Assert.Empty(initialPath);
+        }
 
-        // Act
-        viewModel.SetDPHotkey(newHotkey);
+        [Fact]
+        public void SetN2NCHotkey_ShouldUpdateConfig()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
+            string newHotkey = "Ctrl+Alt+N";
 
-        // Assert
-        // We can't easily verify the global settings change, but method shouldn't throw
-        Assert.NotNull(viewModel);
-    }
+            // Act
+            viewModel.SetN2NCHotkey(newHotkey);
 
-    [Fact]
-    public void SetKRRLNHotkey_ShouldUpdateConfig()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
-        var newHotkey = "Ctrl+Alt+K";
+            // Assert
+            // We can't easily verify the global settings change, but method shouldn't throw
+            Assert.NotNull(viewModel);
+        }
 
-        // Act
-        viewModel.SetKRRLNHotkey(newHotkey);
+        [Fact]
+        public void SetDPHotkey_ShouldUpdateConfig()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
+            string newHotkey = "Ctrl+Alt+D";
 
-        // Assert
-        // We can't easily verify the global settings change, but method shouldn't throw
-        Assert.NotNull(viewModel);
-    }
+            // Act
+            viewModel.SetDPHotkey(newHotkey);
 
-    [Fact]
-    public void CurrentFileInfo_ShouldHaveDefaultValues()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
+            // Assert
+            // We can't easily verify the global settings change, but method shouldn't throw
+            Assert.NotNull(viewModel);
+        }
 
-        // Assert
-        Assert.Empty(viewModel.Title.Value);
-        Assert.Empty(viewModel.Artist.Value);
-        Assert.Empty(viewModel.Creator.Value);
-        Assert.Empty(viewModel.Version.Value);
-    }
+        [Fact]
+        public void SetKRRLNHotkey_ShouldUpdateConfig()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
+            string newHotkey = "Ctrl+Alt+K";
 
-    [Fact]
-    public void WindowTitle_ShouldNotBeEmpty()
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
+            // Act
+            viewModel.SetKRRLNHotkey(newHotkey);
 
-        // Assert
-        Assert.NotEmpty(viewModel.WindowTitle);
-    }
+            // Assert
+            // We can't easily verify the global settings change, but method shouldn't throw
+            Assert.NotNull(viewModel);
+        }
 
-    [Theory]
-    [InlineData("Ctrl+Shift+A")]
-    [InlineData("Alt+F1")]
-    [InlineData("F12")]
-    public void SetHotkey_Methods_ShouldNotThrow(string hotkey)
-    {
-        // Arrange
-        var viewModel = new ListenerViewModel();
+        [Fact]
+        public void CurrentFileInfo_ShouldHaveDefaultValues()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
 
-        // Act & Assert - Should not throw
-        var exception1 = Record.Exception(() => viewModel.SetN2NCHotkey(hotkey));
-        var exception2 = Record.Exception(() => viewModel.SetDPHotkey(hotkey));
-        var exception3 = Record.Exception(() => viewModel.SetKRRLNHotkey(hotkey));
+            // Assert
+            Assert.Empty(viewModel.Title.Value);
+            Assert.Empty(viewModel.Artist.Value);
+            Assert.Empty(viewModel.Creator.Value);
+            Assert.Empty(viewModel.Version.Value);
+        }
 
-        Assert.Null(exception1);
-        Assert.Null(exception2);
-        Assert.Null(exception3);
+        [Fact]
+        public void WindowTitle_ShouldNotBeEmpty()
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
+
+            // Assert
+            Assert.NotEmpty(viewModel.WindowTitle);
+        }
+
+        [Theory]
+        [InlineData("Ctrl+Shift+A")]
+        [InlineData("Alt+F1")]
+        [InlineData("F12")]
+        public void SetHotkey_Methods_ShouldNotThrow(string hotkey)
+        {
+            // Arrange
+            var viewModel = new ListenerViewModel();
+
+            // Act & Assert - Should not throw
+            Exception? exception1 = Record.Exception(() => viewModel.SetN2NCHotkey(hotkey));
+            Exception? exception2 = Record.Exception(() => viewModel.SetDPHotkey(hotkey));
+            Exception? exception3 = Record.Exception(() => viewModel.SetKRRLNHotkey(hotkey));
+
+            Assert.Null(exception1);
+            Assert.Null(exception2);
+            Assert.Null(exception3);
+        }
     }
 }

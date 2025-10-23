@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using krrTools.Configuration;
 using krrTools.Core;
@@ -15,7 +18,7 @@ namespace krrTools.Bindable
     {
         private readonly ConverterEnum _converter;
         private readonly IEventBus? _eventBus;
-        private readonly Dictionary<string, object?> _oldValues = new();
+        private readonly Dictionary<string, object?> _oldValues = new Dictionary<string, object?>();
 
         public TOptions Options { get; private set; }
 
@@ -29,10 +32,7 @@ namespace krrTools.Bindable
             InitializeOldValues();
 
             // Listen to options PropertyChanged for auto-save
-            if (Options is INotifyPropertyChanged notifyOptions)
-            {
-                notifyOptions.PropertyChanged += OnOptionsPropertyChanged;
-            }
+            if (Options is INotifyPropertyChanged notifyOptions) notifyOptions.PropertyChanged += OnOptionsPropertyChanged;
 
             // Listen to BaseOptionsManager settings changed to reload when options are saved externally
             BaseOptionsManager.SettingsChanged += OnExternalSettingsChanged;
@@ -44,17 +44,19 @@ namespace krrTools.Bindable
         /// </summary>
         private void InitializeOldValues()
         {
-            var properties = typeof(TOptions).GetProperties();
-            foreach (var property in properties)
+            PropertyInfo[] properties = typeof(TOptions).GetProperties();
+
+            foreach (PropertyInfo property in properties)
             {
-                if (property.PropertyType.IsGenericType && 
+                if (property.PropertyType.IsGenericType &&
                     property.PropertyType.GetGenericTypeDefinition() == typeof(Bindable<>))
                 {
-                    var bindable = property.GetValue(Options);
+                    object? bindable = property.GetValue(Options);
+
                     if (bindable != null)
                     {
-                        var valueProperty = bindable.GetType().GetProperty("Value");
-                        var currentValue = valueProperty?.GetValue(bindable);
+                        PropertyInfo? valueProperty = bindable.GetType().GetProperty("Value");
+                        object? currentValue = valueProperty?.GetValue(bindable);
                         _oldValues[property.Name] = currentValue;
                     }
                 }
@@ -63,6 +65,17 @@ namespace krrTools.Bindable
 
         private void OnOptionsPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
+            // Debug日志：记录所有转换工具设置的变化
+            object? oldValue = _oldValues.GetValueOrDefault(e.PropertyName ?? "");
+            object? newValue = Options.GetType().GetProperty(e.PropertyName ?? "")?.GetValue(Options);
+
+            // // 由于异步通知管线，此处很难生效
+            // Logger.WriteLine(LogLevel.Debug, "[ReactiveOptions] Converter: {0}, Property: {1}, OldValue: {2}, NewValue: {3}", 
+            //     _converter, 
+            //     e.PropertyName ?? "null", 
+            //     oldValue ?? "null", 
+            //     newValue ?? "null");
+
             // Auto-save on property change
             BaseOptionsManager.SaveOptions(_converter, Options);
 
@@ -72,9 +85,6 @@ namespace krrTools.Bindable
             // Publish settings changed event if event bus is available (for compatibility with existing subscribers)
             if (_eventBus != null)
             {
-                var oldValue = _oldValues.GetValueOrDefault(e.PropertyName ?? "");
-                var newValue = Options.GetType().GetProperty(e.PropertyName ?? "")?.GetValue(Options);
-                
                 // 只在NewValue不为null时发布事件（设置通常不为null）
                 if (newValue != null)
                 {
@@ -86,7 +96,7 @@ namespace krrTools.Bindable
                         SettingsType = typeof(TOptions)
                     };
                     _eventBus.Publish(settingsEvent);
-                    
+
                     // 更新旧值缓存
                     _oldValues[e.PropertyName ?? ""] = newValue;
                 }
@@ -107,13 +117,13 @@ namespace krrTools.Bindable
                 // {
                 //     oldNotifyOptions.PropertyChanged -= OnOptionsPropertyChanged;
                 // }
-                
+
                 // // Subscribe to new options
                 // if (Options is INotifyPropertyChanged newNotifyOptions)
                 // {
                 //     newNotifyOptions.PropertyChanged += OnOptionsPropertyChanged;
                 // }
-                
+
                 toolOptions.IsLoading = false;
             }
         }
@@ -136,11 +146,8 @@ namespace krrTools.Bindable
 
         public void Dispose()
         {
-            if (Options is INotifyPropertyChanged notifyOptions)
-            {
-                notifyOptions.PropertyChanged -= OnOptionsPropertyChanged;
-            }
-            
+            if (Options is INotifyPropertyChanged notifyOptions) notifyOptions.PropertyChanged -= OnOptionsPropertyChanged;
+
             BaseOptionsManager.SettingsChanged -= OnExternalSettingsChanged;
         }
 
@@ -149,7 +156,7 @@ namespace krrTools.Bindable
             return reactive.Options;
         }
     }
-    
+
     public class SettingsChangedEvent
     {
         public string? Key { get; set; }

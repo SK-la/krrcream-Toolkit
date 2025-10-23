@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace krrTools.Bindable
@@ -15,8 +18,8 @@ namespace krrTools.Bindable
         private T _value;
         private bool _disabled;
         private Func<T, T>? _mapping;
-        private List<Action<T>> _onValueChangedCallbacks = new();
-        private List<Func<T, Task>> _onValueChangedAsyncCallbacks = new();
+        private List<Action<T>> _onValueChangedCallbacks = new List<Action<T>>();
+        private List<Func<T, Task>> _onValueChangedAsyncCallbacks = new List<Func<T, Task>>();
         private bool _isNotifying; // 防递归标志
         private INotifyCollectionChanged? _collectionChanged;
         private T _previousValue; // 用于撤销功能
@@ -25,6 +28,7 @@ namespace krrTools.Bindable
         {
             _value = defaultValue;
             _previousValue = defaultValue; // 初始化上一个值
+
             // 如果默认值是集合，监听其改变
             if (_value is INotifyCollectionChanged collection)
             {
@@ -39,7 +43,10 @@ namespace krrTools.Bindable
             set => Set(value);
         }
 
-        public T RawValue => _value;
+        public T RawValue
+        {
+            get => _value;
+        }
 
         public bool Disabled
         {
@@ -82,7 +89,7 @@ namespace krrTools.Bindable
             _ = NotifyValueChangedAsync(_value);
 
             // 调试测试绑定变化
-            // Logger.WriteLine(LogLevel.Debug,$"[Bindable] Property '{propertyName}' changed to '{value}'");
+            // Logger.WriteLine(LogLevel.Debug, $"[Bindable] Property '{propertyName}' changed to '{value}'");
             OnPropertyChanged(propertyName ?? nameof(Value));
         }
 
@@ -95,19 +102,14 @@ namespace krrTools.Bindable
         private async Task NotifyValueChangedAsync(T value)
         {
             _isNotifying = true;
+
             try
             {
                 // 同步回调
-                foreach (var callback in _onValueChangedCallbacks)
-                {
-                    callback(value);
-                }
-                
+                foreach (Action<T> callback in _onValueChangedCallbacks) callback(value);
+
                 // 异步回调
-                foreach (var callback in _onValueChangedAsyncCallbacks)
-                {
-                    await callback(value);
-                }
+                foreach (Func<T, Task> callback in _onValueChangedAsyncCallbacks) await callback(value);
             }
             finally
             {
@@ -136,7 +138,7 @@ namespace krrTools.Bindable
             // One-way from other to this
             other.PropertyChanged += (_, _) => Value = other.Value;
             // One-way from this to other
-            this.PropertyChanged += (_, _) => other.Value = this.Value;
+            PropertyChanged += (_, _) => other.Value = Value;
         }
 
         /// <summary>
@@ -180,10 +182,7 @@ namespace krrTools.Bindable
         /// </summary>
         public void Undo()
         {
-            if (!EqualityComparer<T>.Default.Equals(_previousValue, default(T)))
-            {
-                Value = _previousValue;
-            }
+            if (!EqualityComparer<T>.Default.Equals(_previousValue, default)) Value = _previousValue;
         }
     }
 }

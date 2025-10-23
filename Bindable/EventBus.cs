@@ -1,4 +1,8 @@
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using krrTools.Beatmaps;
 using krrTools.Configuration;
 
@@ -62,7 +66,7 @@ namespace krrTools.Bindable
     public class EventBus : IEventBus
     {
         private event Action<object>? _eventPublished;
-        private readonly ConcurrentDictionary<Type, ConcurrentQueue<(object Event, int Priority)>> _priorityQueues = new();
+        private readonly ConcurrentDictionary<Type, ConcurrentQueue<(object Event, int Priority)>> _priorityQueues = new ConcurrentDictionary<Type, ConcurrentQueue<(object Event, int Priority)>>();
         private readonly SemaphoreSlim _processingSemaphore = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
 
@@ -75,8 +79,8 @@ namespace krrTools.Bindable
         {
             if (eventData == null) return;
 
-            var eventType = typeof(T);
-            var queue = _priorityQueues.GetOrAdd(eventType, _ => new ConcurrentQueue<(object, int)>());
+            Type eventType = typeof(T);
+            ConcurrentQueue<(object Event, int Priority)> queue = _priorityQueues.GetOrAdd(eventType, _ => new ConcurrentQueue<(object, int)>());
             queue.Enqueue((eventData, priority));
 
             // 异步处理队列，避免阻塞发布者
@@ -86,27 +90,25 @@ namespace krrTools.Bindable
         private async Task ProcessQueueAsync(Type eventType, CancellationToken cancellationToken)
         {
             await _processingSemaphore.WaitAsync(cancellationToken);
+
             try
             {
-                var queue = _priorityQueues.GetOrAdd(eventType, _ => new ConcurrentQueue<(object, int)>());
-                
+                ConcurrentQueue<(object Event, int Priority)> queue = _priorityQueues.GetOrAdd(eventType, _ => new ConcurrentQueue<(object, int)>());
+
                 // 收集所有待处理事件
                 var events = new List<(object Event, int Priority)>();
-                while (queue.TryDequeue(out var item))
-                {
-                    events.Add(item);
-                }
-                
+                while (queue.TryDequeue(out (object Event, int Priority) item)) events.Add(item);
+
                 if (events.Count == 0) return;
-                
+
                 // 按优先级排序（高优先级先处理）
                 events.Sort((a, b) => b.Priority.CompareTo(a.Priority));
-                
+
                 // 逐个发布事件
-                foreach (var (evt, _) in events)
+                foreach ((object evt, int _) in events)
                 {
                     if (cancellationToken.IsCancellationRequested) break;
-                    
+
                     try
                     {
                         _eventPublished?.Invoke(evt);
@@ -116,7 +118,7 @@ namespace krrTools.Bindable
                         // 记录错误但不中断处理
                         Console.WriteLine($"[EventBus] Error processing event {evt.GetType().Name}: {ex.Message}");
                     }
-                    
+
                     // 小延迟避免过度占用CPU
                     await Task.Delay(1, cancellationToken);
                 }
@@ -129,9 +131,9 @@ namespace krrTools.Bindable
 
         public IDisposable Subscribe<T>(Action<T> handler)
         {
-            Action<object> wrapper = obj => 
-            { 
-                if (obj is T t) 
+            Action<object> wrapper = obj =>
+            {
+                if (obj is T t)
                 {
                     try
                     {
@@ -149,7 +151,10 @@ namespace krrTools.Bindable
 
         private class Unsubscriber(Action unsubscribe) : IDisposable
         {
-            public void Dispose() => unsubscribe();
+            public void Dispose()
+            {
+                unsubscribe();
+            }
         }
 
         // 清理资源
@@ -198,24 +203,24 @@ namespace krrTools.Bindable
     {
         public required string FilePath { get; set; }
         // public required string FileName { get; set; }
-        
+
         /// <summary>
         /// Event type to distinguish between path change and full analysis
         /// </summary>
         public BeatmapChangeType ChangeType { get; set; }
-        
+
         /// <summary>
         /// 构造函数，不强制要求Beatmap对象
         /// </summary>
         public BeatmapChangedEvent()
         {
         }
-                
+
         // /// <summary>
         // /// 只读的谱面对象，提供完整的谱面数据访问（可选）
         // /// </summary>
         // public Beatmap? Beatmap { get; set; }
-        
+
         // /// <summary>
         // /// 构造函数，设置Beatmap对象，事件携带只读谱面数据
         // /// </summary>
@@ -228,17 +233,17 @@ namespace krrTools.Bindable
     public class MonitoringEnabledChangedEvent : ValueChangedEvent<bool> { }
 
     public class OsuRunningEvent : ValueChangedEvent<bool> { }
-    
+
     /// <summary>
     /// Event raised when beatmap analysis is completed and results are available
     /// </summary>
     public class AnalysisResultChangedEvent
-    {        
+    {
         /// <summary>
         /// The complete analysis result
         /// </summary>
         public required OsuAnalysisBasic AnalysisBasic { get; set; }
-        
+
         /// <summary>
         /// The performance analysis result
         /// </summary>
@@ -256,7 +261,7 @@ namespace krrTools.Bindable
     public class FileSourceChangedEvent : ValueChangedEvent<FileSource>
     {
         public string[]? Files { get; }
-        
+
         public FileSourceChangedEvent(FileSource oldSource, FileSource newSource, string[]? files)
         {
             OldValue = oldSource;

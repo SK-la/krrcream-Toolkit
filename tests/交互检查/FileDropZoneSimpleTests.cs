@@ -7,117 +7,115 @@ using krrTools.Utilities;
 using Moq;
 using Xunit;
 
-namespace krrTools.Tests.交互检查;
-
-public class FileDropZoneSimpleTests
+namespace krrTools.Tests.交互检查
 {
-    private readonly Mock<IModuleManager> _mockModuleManager;
-    private readonly Mock<IEventBus> _mockEventBus;
-
-    public FileDropZoneSimpleTests()
+    public class FileDropZoneSimpleTests
     {
-        _mockModuleManager = new Mock<IModuleManager>();
-        _mockEventBus = new Mock<IEventBus>();
-    }
+        private readonly Mock<IModuleManager> _mockModuleManager;
+        private readonly Mock<IEventBus> _mockEventBus;
 
-    // 在STA线程中创建实例，避免Mock问题
-    private FileDropZoneViewModel CreateViewModel()
-    {
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
-
-        static ConverterEnum getActiveTabTag()
+        public FileDropZoneSimpleTests()
         {
-            return ConverterEnum.N2NC;
+            _mockModuleManager = new Mock<IModuleManager>();
+            _mockEventBus = new Mock<IEventBus>();
         }
 
-        return new FileDropZoneViewModel(fileDispatcher)
+        // 在STA线程中创建实例，避免Mock问题
+        private FileDropZoneViewModel CreateViewModel()
         {
-            EventBus = _mockEventBus.Object,
-            GetActiveTabTag = getActiveTabTag
-        };
-    }
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
 
-    // 创建FileDropZone实例用于测试
-    private FileDropZone CreateFileDropZone()
-    {
-        var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
-        var dropZone = new FileDropZone(fileDispatcher, true); // 使用跳过注入的构造函数
-        // 手动设置ViewModel的EventBus，避免依赖注入
-        dropZone.ViewModel.EventBus = _mockEventBus.Object;
-        return dropZone;
-    }
+            static ConverterEnum getActiveTabTag() => ConverterEnum.N2NC;
 
-    [Fact]
-    public void Constructor_ShouldCreateFileDropZone()
-    {
-        STATestHelper.RunInSTA(() =>
+            return new FileDropZoneViewModel(fileDispatcher)
+            {
+                EventBus = _mockEventBus.Object,
+                GetActiveTabTag = getActiveTabTag
+            };
+        }
+
+        // 创建FileDropZone实例用于测试
+        private FileDropZone CreateFileDropZone()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            var fileDispatcher = new FileDispatcher(_mockModuleManager.Object);
+            var dropZone = new FileDropZone(fileDispatcher, true); // 使用跳过注入的构造函数
+            // 手动设置ViewModel的EventBus，避免依赖注入
+            dropZone.ViewModel.EventBus = _mockEventBus.Object;
+            return dropZone;
+        }
 
-            // Act
-            var dropZone = CreateFileDropZone();
-            dropZone.SetViewModel(viewModel);
-
-            // Assert
-            Assert.NotNull(dropZone);
-            Assert.True(dropZone.AllowDrop);
-            Assert.Equal(viewModel, dropZone.DataContext);
-        });
-    }
-
-    [Fact]
-    public void Constructor_ShouldSetAllowDrop()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void Constructor_ShouldCreateFileDropZone()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
 
-            // Act
-            var dropZone = CreateFileDropZone();
-            dropZone.SetViewModel(viewModel);
+                // Act
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
 
-            // Assert
-            Assert.True(dropZone.AllowDrop);
-        });
-    }
+                // Assert
+                Assert.NotNull(dropZone);
+                Assert.True(dropZone.AllowDrop);
+                Assert.Equal(viewModel, dropZone.DataContext);
+            });
+        }
 
-    [Fact]
-    public void Constructor_ShouldSetDataContext()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void Constructor_ShouldSetAllowDrop()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
 
-            // Act
-            var dropZone = CreateFileDropZone();
-            dropZone.SetViewModel(viewModel);
+                // Act
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
 
-            // Assert
-            Assert.Equal(viewModel, dropZone.DataContext);
-        });
-    }
+                // Assert
+                Assert.True(dropZone.AllowDrop);
+            });
+        }
 
-    [Fact]
-    public void ViewModel_DisplayText_ShouldUpdateWhenFilesChange()
-    {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void Constructor_ShouldSetDataContext()
         {
-            // Arrange
-            var viewModel = CreateViewModel();
-            var dropZone = CreateFileDropZone();
-            dropZone.SetViewModel(viewModel);
-            var initialText = viewModel.DisplayText;
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
 
-            // Act
-            viewModel.SetFiles(["test1.osu", "test2.osu"]);
-            var updatedText = viewModel.DisplayText;
+                // Act
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
 
-            // Assert
-            Assert.NotEqual(initialText, updatedText);
-            Assert.Contains("2", updatedText); // Should show file count
-        });
+                // Assert
+                Assert.Equal(viewModel, dropZone.DataContext);
+            });
+        }
+
+        [Fact]
+        public void ViewModel_DisplayText_ShouldUpdateWhenFilesChange()
+        {
+            STATestHelper.RunInSTA(() =>
+            {
+                // Arrange
+                FileDropZoneViewModel viewModel = CreateViewModel();
+                FileDropZone dropZone = CreateFileDropZone();
+                dropZone.SetViewModel(viewModel);
+                string initialText = viewModel.DisplayText;
+
+                // Act
+                viewModel.SetFiles(["test1.osu", "test2.osu"]);
+                string updatedText = viewModel.DisplayText;
+
+                // Assert
+                Assert.NotEqual(initialText, updatedText);
+                Assert.Contains("2", updatedText); // Should show file count
+            });
+        }
     }
 }

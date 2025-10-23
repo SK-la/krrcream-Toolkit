@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Extensions.Logging;
 
 namespace krrTools
@@ -19,7 +20,7 @@ namespace krrTools
         {
             _consoleOutputEnabled = enabled;
         }
-        
+
         /// <summary>
         /// Logger.WriteLine(LogLevel.Information, "xxxx{0}, {1}", a, b);
         /// </summary>
@@ -35,26 +36,26 @@ namespace krrTools
             //     return;
 
             ConsoleColor color = level switch
-            {
-                LogLevel.Debug => ConsoleColor.Gray,
-                LogLevel.Information => ConsoleColor.Green,
-                LogLevel.Warning => ConsoleColor.Yellow,
-                LogLevel.Error => ConsoleColor.Red,
-                LogLevel.Critical => ConsoleColor.Magenta,
-                _ => ConsoleColor.Gray,
-            };
+                                 {
+                                     LogLevel.Debug => ConsoleColor.Gray,
+                                     LogLevel.Information => ConsoleColor.Green,
+                                     LogLevel.Warning => ConsoleColor.Yellow,
+                                     LogLevel.Error => ConsoleColor.Red,
+                                     LogLevel.Critical => ConsoleColor.Magenta,
+                                     _ => ConsoleColor.Gray
+                                 };
 
             string formatted = args.Length > 0 ? string.Format(message, args) : message;
 
             string levelString = level switch
-            {
-                LogLevel.Debug => "Debug",
-                LogLevel.Information => "Info",
-                LogLevel.Warning => "Warning",
-                LogLevel.Error => "Error",
-                LogLevel.Critical => "Critical",
-                _ => "unkn",
-            };
+                                 {
+                                     LogLevel.Debug => "Debug",
+                                     LogLevel.Information => "Info",
+                                     LogLevel.Warning => "Warning",
+                                     LogLevel.Error => "Error",
+                                     LogLevel.Critical => "Critical",
+                                     _ => "unkn"
+                                 };
 
             Console.ForegroundColor = color;
             Console.WriteLine($"{levelString}: {formatted}");

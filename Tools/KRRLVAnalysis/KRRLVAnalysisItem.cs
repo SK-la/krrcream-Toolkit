@@ -1,6 +1,10 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using krrTools.Beatmaps;
 using Microsoft.Extensions.Logging;
 using OsuParsers.Beatmaps;
@@ -9,34 +13,31 @@ namespace krrTools.Tools.KRRLVAnalysis
 {
     public enum AnalysisStatus
     {
-        Waiting,        // 等待处理
-        BasicLoaded,    // 阶段1：基础信息已加载
-        Analyzing,      // 阶段2：计算分析数据
-        Completed,      // 完成
-        Error           // 错误状态
+        Waiting, // 等待处理
+        BasicLoaded, // 阶段1：基础信息已加载
+        Analyzing, // 阶段2：计算分析数据
+        Completed, // 完成
+        Error // 错误状态
     }
-    
+
     public static class AnalysisStatusExtensions
     {
         public static string ToDisplayString(this AnalysisStatus status, string? errorMessage = null)
         {
             return status switch
-            {
-                AnalysisStatus.Waiting => "waiting",
-                AnalysisStatus.BasicLoaded => "basic-ready",
-                AnalysisStatus.Analyzing => "analyzing",
-                AnalysisStatus.Completed => "√",
-                AnalysisStatus.Error => string.IsNullOrEmpty(errorMessage) ? "error" : $"error: {errorMessage}",
-                _ => "unknown"
-            };
+                   {
+                       AnalysisStatus.Waiting => "waiting",
+                       AnalysisStatus.BasicLoaded => "basic-ready",
+                       AnalysisStatus.Analyzing => "analyzing",
+                       AnalysisStatus.Completed => "√",
+                       AnalysisStatus.Error => string.IsNullOrEmpty(errorMessage) ? "error" : $"error: {errorMessage}",
+                       _ => "unknown"
+                   };
         }
-        
+
         public static string? GetErrorMessage(this AnalysisStatus status, string? statusText)
         {
-            if (status == AnalysisStatus.Error && !string.IsNullOrEmpty(statusText) && statusText.StartsWith("error: "))
-            {
-                return statusText.Substring("error: ".Length);
-            }
+            if (status == AnalysisStatus.Error && !string.IsNullOrEmpty(statusText) && statusText.StartsWith("error: ")) return statusText.Substring("error: ".Length);
             return null;
         }
     }
@@ -131,8 +132,11 @@ namespace krrTools.Tools.KRRLVAnalysis
             set => SetProperty(ref _notesCount, value);
         }
 
-        public string Status => _analysisStatus.ToDisplayString(_errorMessage);
-        
+        public string Status
+        {
+            get => _analysisStatus.ToDisplayString(_errorMessage);
+        }
+
         public string? ErrorMessage
         {
             get => _errorMessage;
@@ -194,10 +198,7 @@ namespace krrTools.Tools.KRRLVAnalysis
             get => _analysisStatus;
             set
             {
-                if (SetProperty(ref _analysisStatus, value))
-                {
-                    OnPropertyChanged(nameof(Status)); // 当状态改变时，通知Status属性也改变了
-                }
+                if (SetProperty(ref _analysisStatus, value)) OnPropertyChanged(nameof(Status)); // 当状态改变时，通知Status属性也改变了
             }
         }
 
@@ -209,9 +210,9 @@ namespace krrTools.Tools.KRRLVAnalysis
             try
             {
                 Phase = AnalysisStatus.BasicLoaded;
-                
+
                 // 获取基础信息
-                var basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(beatmap);
+                OsuAnalysisBasic basicInfo = await OsuAnalyzer.AnalyzeBasicInfoAsync(beatmap);
 
                 // 直接设置基础信息属性
                 Title = basicInfo.Title;
@@ -223,13 +224,13 @@ namespace krrTools.Tools.KRRLVAnalysis
                 HP = basicInfo.HP;
                 BeatmapID = basicInfo.BeatmapID;
                 BeatmapSetID = basicInfo.BeatmapSetID;
-                
+
                 KeyCount = basicInfo.KeyCount;
                 NotesCount = basicInfo.NotesCount;
                 LN_Percent = basicInfo.LN_Percent;
                 MaxKPS = basicInfo.MaxKPS;
                 AvgKPS = basicInfo.AvgKPS;
-                
+
                 ErrorMessage = null; // 清除之前的错误信息
             }
             catch (Exception ex)
@@ -245,16 +246,16 @@ namespace krrTools.Tools.KRRLVAnalysis
             try
             {
                 Phase = AnalysisStatus.Analyzing;
-                
+
                 var sw = Stopwatch.StartNew();
-                var performance = await OsuAnalyzer.AnalyzeAdvancedAsync(beatmap);
+                OsuAnalysisPerformance? performance = await OsuAnalyzer.AnalyzeAdvancedAsync(beatmap);
                 sw.Stop();
-                
+
                 // 记录详细的性能分析时间（可选择性开启）
                 if (sw.ElapsedMilliseconds > 50) // 只记录耗时较长的
                 {
                     Logger.WriteLine(LogLevel.Debug,
-                        $"[Performance] 文件 {Path.GetFileName(FilePath)} 高级分析耗时: {sw.ElapsedMilliseconds}ms");
+                                     $"[Performance] 文件 {Path.GetFileName(FilePath)} 高级分析耗时: {sw.ElapsedMilliseconds}ms");
                 }
 
                 // 直接设置分析结果属性
@@ -277,7 +278,7 @@ namespace krrTools.Tools.KRRLVAnalysis
         {
             // 第一阶段：加载基础信息，完成后UI会立即刷新
             await LoadBasicInfoAsync(beatmap);
-            
+
             // 第二阶段：加载性能信息，完成后UI会再次刷新
             await LoadPerformanceAsync(beatmap);
         }
@@ -307,10 +308,7 @@ namespace krrTools.Tools.KRRLVAnalysis
         {
             if (_disposed) return;
 
-            if (disposing)
-            {
-                PropertyChanged = null;
-            }
+            if (disposing) PropertyChanged = null;
 
             _disposed = true;
         }

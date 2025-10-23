@@ -25,10 +25,7 @@ namespace krrTools.Bindable
             Options = BaseOptionsManager.LoadModuleOptions<TOptions>(module) ?? new TOptions();
 
             // Listen to options PropertyChanged for auto-save
-            if (Options is INotifyPropertyChanged notifyOptions)
-            {
-                notifyOptions.PropertyChanged += OnOptionsPropertyChanged;
-            }
+            if (Options is INotifyPropertyChanged notifyOptions) notifyOptions.PropertyChanged += OnOptionsPropertyChanged;
 
             // Listen to BaseOptionsManager settings changed to reload when options are saved externally
             BaseOptionsManager.SettingsChanged += OnExternalSettingsChanged;
@@ -70,10 +67,7 @@ namespace krrTools.Bindable
 
         public void Dispose()
         {
-            if (Options is INotifyPropertyChanged notifyOptions)
-            {
-                notifyOptions.PropertyChanged -= OnOptionsPropertyChanged;
-            }
+            if (Options is INotifyPropertyChanged notifyOptions) notifyOptions.PropertyChanged -= OnOptionsPropertyChanged;
 
             BaseOptionsManager.SettingsChanged -= OnExternalSettingsChanged;
         }

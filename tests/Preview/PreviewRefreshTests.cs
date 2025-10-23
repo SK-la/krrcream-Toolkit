@@ -11,41 +11,42 @@ using krrTools.Tools.Preview;
 using Moq;
 using Xunit;
 
-namespace krrTools.Tests.Preview;
-
-public class TestPreviewViewModel : PreviewViewModel
+namespace krrTools.Tests.Preview
 {
-    public bool Refreshed { get; private set; }
-
-    public TestPreviewViewModel(IEventBus eventBus)
+    public class TestPreviewViewModel : PreviewViewModel
     {
-        // Manually inject EventBus for testing
-        EventBus = eventBus;
+        public bool Refreshed { get; private set; }
+
+        public TestPreviewViewModel(IEventBus eventBus)
+        {
+            // Manually inject EventBus for testing
+            EventBus = eventBus;
+        }
+
+        public override void TriggerRefresh()
+        {
+            Refreshed = true;
+            base.TriggerRefresh();
+        }
     }
 
-    public override void TriggerRefresh()
+    public class MockPreviewProcessor : IPreviewProcessor
     {
-        Refreshed = true;
-        base.TriggerRefresh();
-    }
-}
+        public ConverterEnum? ModuleTool { get; set; }
+        private int _callCount;
 
-public class MockPreviewProcessor : IPreviewProcessor
-{
-    public ConverterEnum? ModuleTool { get; set; }
-    private int _callCount;
+        public FrameworkElement BuildOriginalVisual(OsuParsers.Beatmaps.Beatmap input)
+        {
+            return new Canvas { Name = "Original" };
+        }
 
-    public FrameworkElement BuildOriginalVisual(OsuParsers.Beatmaps.Beatmap input)
-    {
-        return new Canvas { Name = "Original" };
-    }
-
-    public FrameworkElement BuildConvertedVisual(OsuParsers.Beatmaps.Beatmap input)
-    {
-        _callCount++;
-        var canvas = new Canvas { Name = $"Converted_{_callCount}" };
-        // Add some notes to simulate changes
-        for (var i = 0; i < _callCount; i++) canvas.Children.Add(new Rectangle { Width = 10, Height = 10 });
-        return canvas;
+        public FrameworkElement BuildConvertedVisual(OsuParsers.Beatmaps.Beatmap input)
+        {
+            _callCount++;
+            var canvas = new Canvas { Name = $"Converted_{_callCount}" };
+            // Add some notes to simulate changes
+            for (int i = 0; i < _callCount; i++) canvas.Children.Add(new Rectangle { Width = 10, Height = 10 });
+            return canvas;
+        }
     }
 }

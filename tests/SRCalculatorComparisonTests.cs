@@ -75,18 +75,12 @@ namespace krrTools.Tests
             // Call Rust function
             IntPtr resultPtr = calculate_sr_from_json(Marshal.StringToHGlobalAnsi(json), jsonBytes.Length);
 
-            if (resultPtr == IntPtr.Zero)
-            {
-                throw new Exception("Rust SR calculation failed");
-            }
+            if (resultPtr == IntPtr.Zero) throw new Exception("Rust SR calculation failed");
 
             // Parse result (assuming it returns a JSON string with the SR value)
             string resultJson = Marshal.PtrToStringAnsi(resultPtr)!;
             var result = JsonSerializer.Deserialize<Dictionary<string, double>>(resultJson);
-            if (result == null)
-            {
-                throw new Exception("Failed to deserialize Rust result");
-            }
+            if (result == null) throw new Exception("Failed to deserialize Rust result");
 
             // Free the allocated memory
             Marshal.FreeHGlobal(resultPtr);

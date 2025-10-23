@@ -10,7 +10,7 @@ namespace krrTools.Tools.Listener
     /// </summary>
     public class ConversionHotkeyManager : IDisposable
     {
-        private readonly Dictionary<ConverterEnum, GlobalHotkey?> _hotkeys = new();
+        private readonly Dictionary<ConverterEnum, GlobalHotkey?> _hotkeys = new Dictionary<ConverterEnum, GlobalHotkey?>();
         private readonly Action<ConverterEnum> _convertAction;
         private readonly System.Windows.Window _window;
         private bool _hotkeysRegistered;
@@ -30,8 +30,9 @@ namespace krrTools.Tools.Listener
 
             UnregisterAllHotkeys();
 
-            Logger.WriteLine(LogLevel.Debug, "[ConversionHotkeyManager] Registering hotkeys: N2NC='{0}', DP='{1}', KRRLN='{2}'",
-                settings.N2NCHotkey.Value, settings.DPHotkey.Value, settings.KRRLNHotkey.Value);
+            Logger.WriteLine(LogLevel.Debug,
+                             "[ConversionHotkeyManager] Registering hotkeys: N2NC='{0}', DP='{1}', KRRLN='{2}'",
+                             settings.N2NCHotkey.Value, settings.DPHotkey.Value, settings.KRRLNHotkey.Value);
 
             RegisterHotkey(ConverterEnum.N2NC, settings.N2NCHotkey.Value);
             RegisterHotkey(ConverterEnum.DP, settings.DPHotkey.Value);
@@ -46,14 +47,17 @@ namespace krrTools.Tools.Listener
 
             try
             {
-                Logger.WriteLine(LogLevel.Debug, $"[ConversionHotkeyManager] Registering hotkey for {converter}: '{hotkey}'");
+                Logger.WriteLine(LogLevel.Debug,
+                                 $"[ConversionHotkeyManager] Registering hotkey for {converter}: '{hotkey}'");
                 var globalHotkey = new GlobalHotkey(hotkey, () => _convertAction(converter), _window);
                 _hotkeys[converter] = globalHotkey;
-                Logger.WriteLine(LogLevel.Debug, $"[ConversionHotkeyManager] Successfully registered hotkey for {converter}");
+                Logger.WriteLine(LogLevel.Debug,
+                                 $"[ConversionHotkeyManager] Successfully registered hotkey for {converter}");
             }
             catch (Exception ex)
             {
-                Logger.WriteLine(LogLevel.Error, $"[ConversionHotkeyManager] Failed to register hotkey for {converter}: {ex.Message}");
+                Logger.WriteLine(LogLevel.Error,
+                                 $"[ConversionHotkeyManager] Failed to register hotkey for {converter}: {ex.Message}");
             }
         }
 
@@ -62,10 +66,7 @@ namespace krrTools.Tools.Listener
         /// </summary>
         public void UnregisterAllHotkeys()
         {
-            foreach (var hotkey in _hotkeys.Values)
-            {
-                hotkey?.Unregister();
-            }
+            foreach (GlobalHotkey? hotkey in _hotkeys.Values) hotkey?.Unregister();
             _hotkeys.Clear();
             _hotkeysRegistered = false;
         }

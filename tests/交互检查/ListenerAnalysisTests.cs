@@ -9,43 +9,44 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Injector = krrTools.Bindable.Injector;
 
-namespace krrTools.Tests.交互检查;
-
-public class ListenerAnalysisTests
+namespace krrTools.Tests.交互检查
 {
-    [Fact]
-    public void ListenerViewModel_AnalysisProperties_ShouldInitializeCorrectly()
+    public class ListenerAnalysisTests
     {
-        STATestHelper.RunInSTA(() =>
+        [Fact]
+        public void ListenerViewModel_AnalysisProperties_ShouldInitializeCorrectly()
         {
-            // 设置测试用的依赖注入服务
-            var services = new ServiceCollection();
-            services.AddSingleton<IEventBus, EventBus>();
-            services.AddSingleton<StateBarManager>();
-            services.AddSingleton<OsuMonitorService>();
-            services.AddSingleton<BeatmapAnalysisService>();
-            var serviceProvider = services.BuildServiceProvider();
-            
-            // 设置Injector使用的服务提供者
-            Injector.SetTestServiceProvider(serviceProvider);
-
-            try
+            STATestHelper.RunInSTA(() =>
             {
-                // Arrange & Act
-                var viewModel = new ListenerViewModel();
+                // 设置测试用的依赖注入服务
+                var services = new ServiceCollection();
+                services.AddSingleton<IEventBus, EventBus>();
+                services.AddSingleton<StateBarManager>();
+                services.AddSingleton<OsuMonitorService>();
+                services.AddSingleton<BeatmapAnalysisService>();
+                ServiceProvider serviceProvider = services.BuildServiceProvider();
 
-                // Assert - 验证ViewModel的分析属性初始化
-                Assert.Equal(0.0, viewModel.XxySR.Value);
-                Assert.Equal(-1.0, viewModel.KrrLV.Value);
-                Assert.Equal(-1.0, viewModel.YlsLV.Value);
-                Assert.Equal(0.0, viewModel.MaxKPS.Value);
-                Assert.Equal(0.0, viewModel.AvgKPS.Value);
-            }
-            finally
-            {
-            // 清理
-            Injector.SetTestServiceProvider(null);
-            }
-        });
+                // 设置Injector使用的服务提供者
+                Injector.SetTestServiceProvider(serviceProvider);
+
+                try
+                {
+                    // Arrange & Act
+                    var viewModel = new ListenerViewModel();
+
+                    // Assert - 验证ViewModel的分析属性初始化
+                    Assert.Equal(0.0, viewModel.XxySR.Value);
+                    Assert.Equal(-1.0, viewModel.KrrLV.Value);
+                    Assert.Equal(-1.0, viewModel.YlsLV.Value);
+                    Assert.Equal(0.0, viewModel.MaxKPS.Value);
+                    Assert.Equal(0.0, viewModel.AvgKPS.Value);
+                }
+                finally
+                {
+                    // 清理
+                    Injector.SetTestServiceProvider(null);
+                }
+            });
+        }
     }
 }
